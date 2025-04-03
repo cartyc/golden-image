@@ -16,7 +16,7 @@ jobs:
           password: ${{ secrets.PASSWORD }}
       - name: Retag and push
         run: |
-          docker build -f python/Dockerfile -t doesthiswork
+          docker build -f python/Dockerfile -t doesthiswork .
 
     # runs-on: ubuntu-latest
     # steps:
