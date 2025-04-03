@@ -21,6 +21,20 @@ jobs:
           ls
           docker build -f python/Dockerfile -t doesthiswork .
 
+      - id: "auth"
+        uses: "google-github-actions/auth@v1"
+        with:
+          credentials_json: "${{ secrets.SERVICE_ACCOUNT_KEY }}"
+      
+      - name: "Set up Cloud SDK"
+        uses: "google-github-actions/setup-gcloud@v1"
+
+      - name: "Use gcloud CLI"
+        run: "gcloud info"
+
+      - name: "Docker auth"
+        run: |-
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
     # runs-on: ubuntu-latest
     # steps:
     # - uses: actions/checkout@v3
