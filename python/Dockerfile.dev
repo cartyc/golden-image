@@ -2,6 +2,10 @@ FROM cgr.dev/chriscarty.com/python:3.12.9-r6-dev
 
 LABEL origin="chainguard"
 
+ARG ARTIFACTORY_HOSTNAME
+ARG ARTIFACTORY_USER_PROFILE
+ARG WOLFI_TOKEN
+
 USER root
 RUN mv /etc/apk/repositories /etc/apk/repositories.disabled
 RUN echo 'https://${ARTIFACTORY_USER_PROFILE}:${WOLFI_TOKEN}@${ARTIFACTORY_HOSTNAME}.jfrog.io/artifactory/apk-wolfi/' >> /etc/apk/repositories

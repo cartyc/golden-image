@@ -24,7 +24,7 @@ jobs:
       - name: Retag and push
         run: |
           ls
-          docker build -f python/Dockerfile.dev --build-arg ARTIFACTORY_HOSTNAME=${ARTIFACTORY_HOSTNAME} --build-arg ARTIFACTORY_USER_PROFILE=${ARTIFACTORY_USER_PROFILE} --build-arg WOLFI_TOKEN=${WOLFI_TOKEN} -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} .
+          docker build -f python/Dockerfile.dev --build-arg ARTIFACTORY_HOSTNAME=${{ secrets.ARTIFACTORY_HOSTNAME }} --build-arg ARTIFACTORY_USER_PROFILE=${{ secrets.ARTIFACTORY_USER_PROFILE }} --build-arg WOLFI_TOKEN=${{ secrets.WOLFI_TOKEN }} -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} .
 
       - name: Scan
         uses: anchore/scan-action@v6
