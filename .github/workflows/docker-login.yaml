@@ -19,7 +19,7 @@ jobs:
       - name: Retag and push
         run: |
           ls
-          docker build -f python/Dockerfile -t doesthiswork .
+          docker build -f python/Dockerfile -t ${{ secrets.DEST_REGISTRY }}/python:3.12.
 
       - id: "auth"
         uses: "google-github-actions/auth@v1"
@@ -35,7 +35,7 @@ jobs:
       - name: "Docker auth"
         run: |-
           gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
-
+      
       - name: Push image
         run: docker push ${{ secrets.DEST_REGISTRY }}/python:3.12
     # runs-on: ubuntu-latest
