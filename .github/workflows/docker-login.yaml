@@ -35,6 +35,9 @@ jobs:
       - name: "Docker auth"
         run: |-
           gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
+
+      - name: Push image
+        run: docker push ${{ secret.GAR_LODEST_REGISTRYCATION }}/python:3.12
     # runs-on: ubuntu-latest
     # steps:
     # - uses: actions/checkout@v3
