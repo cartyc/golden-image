@@ -6,9 +6,13 @@ ARG ARTIFACTORY_HOSTNAME
 ARG ARTIFACTORY_USER_PROFILE
 ARG WOLFI_TOKEN
 
+ENV WOLFI_TOKEN $WOLFI_TOKEN
+ENV ARTIFACTORY_USER_PROFILE $ARTIFACTORY_USER_PROFILE
+ENV ARTIFACTORY_HOSTNAME $ARTIFACTORY_HOSTNAME
+
 USER root
 RUN mv /etc/apk/repositories /etc/apk/repositories.disabled
-RUN echo 'https://${ARTIFACTORY_USER_PROFILE}:${WOLFI_TOKEN}@${ARTIFACTORY_HOSTNAME}.jfrog.io/artifactory/apk-wolfi/' >> /etc/apk/repositories
-RUN echo 'https://${ARTIFACTORY_USER_PROFILE}:${EXTRAS_TOKEN}@${ARTIFACTORY_HOSTNAME}.jfrog.io/artifactory/apk-extras/' >> /etc/apk/repositories
+RUN echo "https://${ARTIFACTORY_USER_PROFILE}:${WOLFI_TOKEN}@${ARTIFACTORY_HOSTNAME}.jfrog.io/artifactory/apk-wolfi/" >> /etc/apk/repositories
+RUN echo "https://${ARTIFACTORY_USER_PROFILE}:${EXTRAS_TOKEN}@${ARTIFACTORY_HOSTNAME}.jfrog.io/artifactory/apk-extras/" >> /etc/apk/repositories
 
 USER nonroot
