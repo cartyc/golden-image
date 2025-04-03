@@ -34,7 +34,7 @@ jobs:
 
       - name: "Docker auth"
         run: |-
-          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+          gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
     # runs-on: ubuntu-latest
     # steps:
     # - uses: actions/checkout@v3
