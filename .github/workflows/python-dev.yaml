@@ -1,0 +1,52 @@
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  IMAGE: python
+  TAG: 3.12-dev
+
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login To Chainnguard
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REGISTRY }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+
+      - name: Retag and push
+        run: |
+          ls
+          docker build -f python/Dockerfile.dev -e ARTIFACTORY_HOSTNAME=${{ secrets.ARTIFACTORY_HOSTNAME }} -e ARTIFACTORY_USER_PROFILE=${{ secrets.ARTIFACTORY_USER_PROFILE }} -e WOLFI_TOKEN=${{ secrets.WOLFI_TOKEN }} -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} .
+
+      - name: Scan
+        uses: anchore/scan-action@v6
+        with:
+          image: ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+          fail-build: true
+          severity-cutoff: critical
+
+      - id: "auth"
+        uses: "google-github-actions/auth@v1"
+        with:
+          credentials_json: "${{ secrets.SERVICE_ACCOUNT_KEY }}"
+      
+      - name: "Set up Cloud SDK"
+        uses: "google-github-actions/setup-gcloud@v1"
+
+      - name: "Use gcloud CLI"
+        run: "gcloud info"
+
+      - name: "Docker auth"
+        run: |-
+          gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
+      
+      - name: Push image
+        run: docker push ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}

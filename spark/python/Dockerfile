@@ -1,0 +1,3 @@
+FROM cgr.dev/chriscarty.com/python:3.12.9-r6
+
+LABEL origin="chainguard"
