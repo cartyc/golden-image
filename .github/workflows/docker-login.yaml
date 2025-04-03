@@ -16,10 +16,19 @@ jobs:
           registry: ${{ secrets.REGISTRY }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PASSWORD }}
+
       - name: Retag and push
         run: |
           ls
           docker build -f python/Dockerfile -t ${{ secrets.DEST_REGISTRY }}/python:3.12 .
+
+      - name: Scan
+        uses: anchore/scan-action@v6
+        with:
+          image: ${{ secrets.DEST_REGISTRY }}/python:3.12
+          fail-build: true
+          severity-cutoff: critical
+
 
       - id: "auth"
         uses: "google-github-actions/auth@v1"
