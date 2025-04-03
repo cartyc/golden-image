@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  IMAGE: python
+  TAG: 3.12
+
 jobs:
   login:
     runs-on: ubuntu-latest
@@ -20,15 +24,14 @@ jobs:
       - name: Retag and push
         run: |
           ls
-          docker build -f python/Dockerfile -t ${{ secrets.DEST_REGISTRY }}/python:3.12 .
+          docker build -f python/Dockerfile -t ${{ secrets.DEST_REGISTRY }}/${{ IMAGE }}:${{ TAG }} .
 
       - name: Scan
         uses: anchore/scan-action@v6
         with:
-          image: ${{ secrets.DEST_REGISTRY }}/python:3.12
+          image: ${{ secrets.DEST_REGISTRY }}/${{ IMAGE }}:${{ TAG }}
           fail-build: true
           severity-cutoff: critical
-
 
       - id: "auth"
         uses: "google-github-actions/auth@v1"
@@ -46,7 +49,4 @@ jobs:
           gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
       
       - name: Push image
-        run: docker push ${{ secrets.DEST_REGISTRY }}/python:3.12
-    # runs-on: ubuntu-latest
-    # steps:
-    # - uses: actions/checkout@v3
+        run: docker push ${{ secrets.DEST_REGISTRY }}/${{ IMAGE }}:${{ TAG }}
