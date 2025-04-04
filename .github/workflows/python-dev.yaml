@@ -8,9 +8,10 @@ env:
   IMAGE: python
   TAG: 3.12-dev
 
+runs-on: ubuntu-latest
+
 jobs:
   login:
-    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
@@ -21,18 +22,23 @@ jobs:
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PASSWORD }}
 
+  build:
+    steps:
       - name: Retag and push
         run: |
           ls
           docker build -f python/Dockerfile.dev --build-arg ARTIFACTORY_HOSTNAME=${{ secrets.ARTIFACTORY_HOSTNAME }} --build-arg ARTIFACTORY_USER_PROFILE=${{ secrets.ARTIFACTORY_USER_PROFILE }} --build-arg WOLFI_TOKEN=${{ secrets.WOLFI_TOKEN }} --build-arg EXTRAS_TOKEN=${{ secrets.EXTRAS_TOKEN }} -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} .
-
+  scan:
+    steps:
       - name: Scan
         uses: anchore/scan-action@v6
         with:
           image: ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
           fail-build: true
           severity-cutoff: critical
-
+  
+  push:
+    steps:
       - id: "auth"
         uses: "google-github-actions/auth@v1"
         with:
