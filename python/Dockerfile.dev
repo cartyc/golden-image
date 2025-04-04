@@ -1,4 +1,4 @@
-FROM cgr.dev/chriscarty.com/python:3.12.9-r6-dev
+FROM cgr.dev/chriscarty.com/python@sha256:e4d9e099a7fbfc353bad66b47eb7e6e6904a35b4bf1c8ce00c7fa932c8dc55fe
 
 LABEL origin="chainguard"
 
@@ -15,6 +15,6 @@ ENV EXTRAS_TOKEN $EXTRAS_TOKEN
 USER root
 RUN mv /etc/apk/repositories /etc/apk/repositories.disabled
 RUN echo "https://${ARTIFACTORY_USER_PROFILE}:${WOLFI_TOKEN}@${ARTIFACTORY_HOSTNAME}.jfrog.io/artifactory/apk-wolfi/" >> /etc/apk/repositories
-RUN echo "https://${ARTIFACTORY_USER_PROFILE}:${EXTRAS_TOKEN}@${ARTIFACTORY_HOSTNAME}.jfrog.io/artifactory/apk-extras/" >> /etc/apk/repositories
+RUN echo "https://${ARTIFACTORY_USER_PROFILE}:${EXTRAS_TOKEN}@${ARTIFACTORY_HOSTNAME}.jfrog.io/artifactory/cg-extras/" >> /etc/apk/repositories
 
 USER nonroot
