@@ -12,10 +12,10 @@ jobs:
   login:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Login To Chainnguard
-        uses: docker/login-action@v3
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
         with:
           registry: ${{ secrets.REGISTRY }}
           username: ${{ secrets.USERNAME }}
@@ -27,19 +27,19 @@ jobs:
           docker build -f python/Dockerfile -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} .
 
       - name: Scan
-        uses: anchore/scan-action@v6
+        uses: anchore/scan-action@7c05671ae9be166aeb155bad2d7df9121823df32
         with:
           image: ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
           fail-build: true
           severity-cutoff: critical
 
       - id: "auth"
-        uses: "google-github-actions/auth@v1"
+        uses: "google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935"
         with:
           credentials_json: "${{ secrets.SERVICE_ACCOUNT_KEY }}"
       
       - name: "Set up Cloud SDK"
-        uses: "google-github-actions/setup-gcloud@v1"
+        uses: "google-github-actions/setup-gcloud@77e7a554d41e2ee56fc945c52dfd3f33d12def9a"
 
       - name: "Use gcloud CLI"
         run: "gcloud info"
