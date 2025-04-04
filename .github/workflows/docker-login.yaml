@@ -1,3 +1,5 @@
+name: Python Distroless Image builder
+
 on:
   push:
     branches: [ main ]
