@@ -18,11 +18,11 @@ jobs:
 
     steps:
     - name: Login To Chainnguard
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
-        with:
-          registry: ${{ secrets.REGISTRY }}
-          username: ${{ secrets.USERNAME }}
-          password: ${{ secrets.PASSWORD }}
+      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+      with:
+        registry: ${{ secrets.REGISTRY }}
+        username: ${{ secrets.USERNAME }}
+        password: ${{ secrets.PASSWORD }}
     - uses: actions/checkout@v4
     - uses: chainguard-dev/digestabot@v1.0.2
       with:
