@@ -16,16 +16,12 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Login To Chainnguard
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+      - uses: chainguard-dev/setup-chainctl@main
         with:
-          registry: ${{ secrets.REGISTRY }}
-          username: ${{ secrets.USERNAME }}
-          password: ${{ secrets.PASSWORD }}
+          identity: 834556885ebd02f51dc11f57b826ec01ed24d377/60bc36d56b605215
 
-      - name: Retag and push
+      - name: Build Image
         run: |
-          ls
           docker build -f python/Dockerfile -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} .
 
       - name: Scan
