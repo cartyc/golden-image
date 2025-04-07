@@ -14,11 +14,12 @@ jobs:
   login:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write 
       contents: write # to push the updates
+      pull-requests: write # to open Pull requests
+      id-token: write # used to sign the commits using gitsign
+
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
       - uses: chainguard-dev/setup-chainctl@main
         with:
           identity: 834556885ebd02f51dc11f57b826ec01ed24d377/60bc36d56b605215
