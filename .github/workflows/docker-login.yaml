@@ -27,6 +27,9 @@ jobs:
         with:
           identity: 834556885ebd02f51dc11f57b826ec01ed24d377/60bc36d56b605215
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.1
+
       - name: Build Image
         run: |
           docker build -f python/Dockerfile -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} .
@@ -37,6 +40,13 @@ jobs:
           image: ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
           fail-build: true
           severity-cutoff: critical
+
+      - name: chps
+        run: |
+          git clone https://github.com/chps-dev/chps-scorer.git
+          cd chps-scorer
+          ./chps-scorer -o json ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+
 
       - id: "auth"
         uses: "google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935"
