@@ -41,14 +41,6 @@ jobs:
           fail-build: true
           severity-cutoff: critical
 
-      - name: chps
-        run: |
-          git clone https://github.com/chps-dev/chps-scorer.git
-          cd chps-scorer
-          docker images
-          ./chps-scorer.sh -o json ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} | jq
-
-
       - id: "auth"
         uses: "google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935"
         with:
@@ -66,3 +58,10 @@ jobs:
       
       - name: Push image
         run: docker push ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+
+      - name: chps
+        run: |
+          git clone https://github.com/chps-dev/chps-scorer.git
+          cd chps-scorer
+          docker images
+          ./chps-scorer.sh -o json ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} | jq
