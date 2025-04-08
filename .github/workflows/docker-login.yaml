@@ -59,6 +59,9 @@ jobs:
       - name: Push image
         run: docker push ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
 
+      - name: Sign Image
+        run: cosign sign ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+
       - name: chps
         run: |
           git clone https://github.com/chps-dev/chps-scorer.git
