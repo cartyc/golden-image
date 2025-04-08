@@ -64,4 +64,4 @@ jobs:
           git clone https://github.com/chps-dev/chps-scorer.git
           cd chps-scorer
           docker images
-          ./chps-scorer.sh -o json ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} | jq
+          ./chps-scorer.sh -o json ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} | jq .overall.score
