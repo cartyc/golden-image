@@ -3,8 +3,8 @@ name: Python Distroless Image builder
 on:
   push:
     branches: [ main ]
-    paths:
-      - python/**
+    # paths:
+    #   - python/**
   pull_request:
     branches: [ main ]
     paths:
