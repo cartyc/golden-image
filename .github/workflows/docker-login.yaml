@@ -66,6 +66,6 @@ jobs:
           docker images
           SCORE=$(./chps-scorer.sh -o json ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} | jq .overall.score)
           if [ "$SCORE" -lt "15" ]; then
-              echo "test score less than 15" \
+              echo "test ${SCORE} score less than 15" \
               && exit 1
           fi
