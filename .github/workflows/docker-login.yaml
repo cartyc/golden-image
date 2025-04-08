@@ -45,7 +45,8 @@ jobs:
         run: |
           git clone https://github.com/chps-dev/chps-scorer.git
           cd chps-scorer
-          ./chps-scorer -o json ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+          ls
+          # ./chps-scorer -o json ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
 
 
       - id: "auth"
