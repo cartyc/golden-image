@@ -30,6 +30,14 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.8.1
 
+      - name: verify image
+        run: |
+          IMAGE=$(cat python/Dockerfile.dev | grep FROM | cut -d ' ' -f 2)
+          cosign verify \
+          --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+          --certificate-identity=https://github.com/chainguard-images/images-private/.github/workflows/release.yaml@refs/heads/main \
+          $IMAGE
+
       - name: Build Image
         run: |
           docker build -f python/Dockerfile -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} .
