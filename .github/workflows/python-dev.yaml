@@ -22,10 +22,23 @@ jobs:
       id-token: write # used to sign the commits using gitsign
 
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
       - uses: chainguard-dev/setup-chainctl@main
         with:
           identity: 834556885ebd02f51dc11f57b826ec01ed24d377/60bc36d56b605215
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.1
+
+      - name: verify image
+        run: |
+          IMAGE=$(cat python/Dockerfile.dev | grep FROM | cut -d ' ' -f 2)
+          cosign verify \
+          --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+          --certificate-identity=https://github.com/chainguard-images/images-private/.github/workflows/release.yaml@refs/heads/main \
+          $IMAGE
+
       - name: Build Image
         run: |
           docker build -f python/Dockerfile.dev --build-arg ARTIFACTORY_HOSTNAME=${{ secrets.ARTIFACTORY_HOSTNAME }} --build-arg ARTIFACTORY_USER_PROFILE=${{ secrets.ARTIFACTORY_USER_PROFILE }} --build-arg WOLFI_TOKEN=${{ secrets.WOLFI_TOKEN }} --build-arg EXTRAS_TOKEN=${{ secrets.EXTRAS_TOKEN }} -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} .
@@ -54,3 +67,13 @@ jobs:
       
       - name: Push image
         run: docker push ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+
+      - name: Sign Image
+        run: cosign sign ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+
+      - name: chps
+        run: |
+          git clone https://github.com/chps-dev/chps-scorer.git
+          cd chps-scorer
+          docker images
+          ./chps-scorer.sh -o json ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} | jq .overall.score
