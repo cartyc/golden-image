@@ -50,12 +50,7 @@ jobs:
       - name: Scan
         uses: anchore/scan-action@2c901ab7378897c01b8efaa2d0c9bf519cc64b9e
         with:
-          image: ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
-
-      - name: Scan
-        uses: anchore/scan-action@2c901ab7378897c01b8efaa2d0c9bf519cc64b9e
-        with:
-          image: ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
+          image: ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}}-${{ env.today }
           fail-build: true
           severity-cutoff: critical
 
