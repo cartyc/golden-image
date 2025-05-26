@@ -76,6 +76,7 @@ jobs:
           cd chps-scorer
           docker images
           ./chps-scorer.sh -o json ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} | jq .overall.score
+
       - name: Setup go
         uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
 
