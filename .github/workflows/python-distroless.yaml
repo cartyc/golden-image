@@ -52,7 +52,7 @@ jobs:
         with:
           image: ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}}-${{ env.today }}
           fail-build: false
-          severity-cutoff: critical
+          # severity-cutoff: critical
 
       - id: "auth"
         uses: "google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935"
