@@ -48,7 +48,7 @@ jobs:
           docker build -f python/Dockerfile -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}-${{ env.today }} .
 
       - name: Scan
-        uses: anchore/scan-action@7c05671ae9be166aeb155bad2d7df9121823df32
+        uses: anchore/scan-action@2c901ab7378897c01b8efaa2d0c9bf519cc64b9e
         with:
           image: ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
           fail-build: true
