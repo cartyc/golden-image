@@ -24,6 +24,10 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
+      - name: Get current date
+        id: date
+        run: echo "today={$(date +'%Y-%m-%d')}" >> $GITHUB_ENV
+
       - uses: chainguard-dev/setup-chainctl@main
         with:
           identity: 834556885ebd02f51dc11f57b826ec01ed24d377/60bc36d56b605215
@@ -41,7 +45,7 @@ jobs:
 
       - name: Build Image
         run: |
-          docker build -f python/Dockerfile.dev --build-arg ARTIFACTORY_HOSTNAME=${{ secrets.ARTIFACTORY_HOSTNAME }} --build-arg ARTIFACTORY_USER_PROFILE=${{ secrets.ARTIFACTORY_USER_PROFILE }} --build-arg WOLFI_TOKEN=${{ secrets.WOLFI_TOKEN }} --build-arg EXTRAS_TOKEN=${{ secrets.EXTRAS_TOKEN }} -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} .
+          docker build -f python/Dockerfile.dev --build-arg ARTIFACTORY_HOSTNAME=${{ secrets.ARTIFACTORY_HOSTNAME }} --build-arg ARTIFACTORY_USER_PROFILE=${{ secrets.ARTIFACTORY_USER_PROFILE }} --build-arg WOLFI_TOKEN=${{ secrets.WOLFI_TOKEN }} --build-arg EXTRAS_TOKEN=${{ secrets.EXTRAS_TOKEN }} -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}-${{ env.time }} .
 
       - name: Scan
         uses: anchore/scan-action@7c05671ae9be166aeb155bad2d7df9121823df32

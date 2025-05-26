@@ -40,7 +40,7 @@ jobs:
 
       - name: Build Image
         run: |
-          docker build -f python/Dockerfile -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} .
+          docker build -f python/Dockerfile -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.IMAGE }}:${{ env.TAG }}-${{ env.time }} .
 
       - name: Scan
         uses: anchore/scan-action@7c05671ae9be166aeb155bad2d7df9121823df32
