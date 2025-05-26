@@ -80,12 +80,3 @@ jobs:
 
       - name: Setup go
         uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
-
-      - name: Run incert and push
-        shell: bash
-        run: |
-          go install github.com/chainguard-dev/incert@latest
-          incert \
-            -ca-certs-file test.crt \
-            -image-url ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} \
-            -dest-image-url ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}

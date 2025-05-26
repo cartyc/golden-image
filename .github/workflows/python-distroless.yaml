@@ -76,3 +76,12 @@ jobs:
           cd chps-scorer
           docker images
           ./chps-scorer.sh -o json ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} | jq .overall.score
+
+      - name: Run incert and push
+        shell: bash
+        run: |
+          go install github.com/chainguard-dev/incert@latest
+          incert \
+            -ca-certs-file python/cert.crt \
+            -image-url ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }} \
+            -dest-image-url ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}
