@@ -45,7 +45,7 @@ jobs:
 
       - name: Build Image
         run: |
-          docker build -f python/Dockerfile.dev --build-arg ARTIFACTORY_HOSTNAME=${{ secrets.ARTIFACTORY_HOSTNAME }} --build-arg ARTIFACTORY_USER_PROFILE=${{ secrets.ARTIFACTORY_USER_PROFILE }} --build-arg WOLFI_TOKEN=${{ secrets.WOLFI_TOKEN }} --build-arg EXTRAS_TOKEN=${{ secrets.EXTRAS_TOKEN }} -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}-${{ env.time }} .
+          docker build -f python/Dockerfile.dev --build-arg ARTIFACTORY_HOSTNAME=${{ secrets.ARTIFACTORY_HOSTNAME }} --build-arg ARTIFACTORY_USER_PROFILE=${{ secrets.ARTIFACTORY_USER_PROFILE }} --build-arg WOLFI_TOKEN=${{ secrets.WOLFI_TOKEN }} --build-arg EXTRAS_TOKEN=${{ secrets.EXTRAS_TOKEN }} -t ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}-${{ env.today }}-dev .
 
       - name: Scan
         uses: anchore/scan-action@7c05671ae9be166aeb155bad2d7df9121823df32
