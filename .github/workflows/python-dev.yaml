@@ -70,10 +70,10 @@ jobs:
           gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
       
       - name: Push image
-        run: docker push ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}-${{ env.today }-dev
+        run: docker push ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}-${{ env.today }}-dev
 
       - name: Sign Image
-        run: cosign sign ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}-${{ env.today }-dev
+        run: cosign sign ${{ secrets.DEST_REGISTRY }}/${{ env.IMAGE }}:${{ env.TAG }}-${{ env.today }}-dev
 
       - name: chps
         run: |
