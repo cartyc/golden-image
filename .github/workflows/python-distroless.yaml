@@ -37,11 +37,11 @@ jobs:
 
       - name: verify image
         run: |
-          IMAGE=$(cat python/Dockerfile.dev | grep FROM | cut -d ' ' -f 2)
+          IMAGE=$(cat python/Dockerfile | grep FROM | cut -d ' ' -f 2)
           echo $IMAGE
           cosign verify \
-          --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
-          --certificate-identity=https://github.com/chainguard-images/images-private/.github/workflows/release.yaml@refs/heads/main \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            --certificate-identity=https://github.com/chainguard-images/images-private/.github/workflows/release.yaml@refs/heads/main \
           $IMAGE
 
       - name: Build Image
