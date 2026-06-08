@@ -1,4 +1,4 @@
-FROM cgr.dev/chriscarty.com/python:3.12-dev@sha256:9de9540da97f921ea35a2a7c0095ae218820f51be80d03c4f5b838379e591071
+FROM cgr.dev/chriscarty.com/python:3.12-dev@sha256:8eada3aeac0875531c4fd6d604e903784f272f2bdb5514d9225fa945cfebdc01
 
 LABEL origin="chainguard"
 
