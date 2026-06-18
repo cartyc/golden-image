@@ -19,7 +19,7 @@ flowchart TB
   src[("cgr.dev<br/>Chainguard source")]
   gar[("Google Artifact Registry<br/>golden images")]
 
-  subgraph build["Build / transform lane — python-*.yaml"]
+  subgraph build["Build / transform lane — python-distroless.yaml"]
     direction TB
     v1["cosign verify upstream"] --> bld["docker build<br/>digest-pinned FROM"]
     bld --> scn["grype scan"]
@@ -29,13 +29,21 @@ flowchart TB
     chp --> inc["incert CA inject"]
   end
 
+  subgraph ca["Custom Assembly — custom-assembly/*.yaml"]
+    direction TB
+    cfg["apko overlay<br/>packages · cert · annotations"] --> apply["chainctl build apply"]
+    apply --> built["Chainguard builds + signs<br/>custom-python"]
+  end
+
   subgraph pass["Pass-through lane — cgr-sync"]
     direction TB
     cs["cgr-sync<br/>verify · diff-by-digest<br/>preserve index + signatures"]
   end
 
   src -->|"needs transform"| v1
+  src -->|"customize server-side"| cfg
   src -->|"ship as-is"| cs
+  built -->|"custom image on cgr.dev"| cs
   inc --> gar
   cs --> gar
   dab["digestabot<br/>daily digest PRs"] -.->|"bump FROM"| bld
