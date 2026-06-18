@@ -99,4 +99,4 @@ Some customizations are better done **server-side** with [Chainguard Custom Asse
 chainctl image repo build edit --parent chriscarty.com --repo python --save-as custom-python
 ```
 
-The result, `cgr.dev/chriscarty.com/custom-python`, is built and signed by Chainguard — so the **pass-through lane** can mirror it to Artifact Registry like any other image (add it to `cgr-sync.yaml`). Bundling an internal CA cert (replacing incert) is available via the Custom Assembly custom-certificates Beta; see the commented block in `custom-assembly/python.yaml`.
+The result, `cgr.dev/chriscarty.com/custom-python`, is built and signed by Chainguard — so the **pass-through lane** can mirror it to Artifact Registry like any other image (add it to `cgr-sync.yaml`). The overlay also bundles the internal CA from `python/cert.crt` into the system truststore (replacing incert); this uses the Custom Assembly custom-certificates **Beta**, which must be enabled for your org before the config will apply.
