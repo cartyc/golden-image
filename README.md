@@ -14,6 +14,33 @@
 
 Two complementary lanes feed the golden-images registry (Google Artifact Registry):
 
+```mermaid
+flowchart TB
+  src[("cgr.dev<br/>Chainguard source")]
+  gar[("Google Artifact Registry<br/>golden images")]
+
+  subgraph build["Build / transform lane — python-*.yaml"]
+    direction TB
+    v1["cosign verify upstream"] --> bld["docker build<br/>digest-pinned FROM"]
+    bld --> scn["grype scan"]
+    scn --> psh["push (dated tag)"]
+    psh --> sgn["cosign sign"]
+    sgn --> chp["chps score"]
+    chp --> inc["incert CA inject"]
+  end
+
+  subgraph pass["Pass-through lane — cgr-sync"]
+    direction TB
+    cs["cgr-sync<br/>verify · diff-by-digest<br/>preserve index + signatures"]
+  end
+
+  src -->|"needs transform"| v1
+  src -->|"ship as-is"| cs
+  inc --> gar
+  cs --> gar
+  dab["digestabot<br/>daily digest PRs"] -.->|"bump FROM"| bld
+```
+
 ### 1. Build / transform lane — `.github/workflows/python-*.yaml`
 
 For images that need modification. Per image (Python `distroless` and `dev`):
