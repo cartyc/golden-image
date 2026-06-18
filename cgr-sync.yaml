@@ -1,0 +1,32 @@
+# Pass-through mirror of Chainguard images into the golden-images registry,
+# run by .github/workflows/passthrough-mirror.yaml.
+#
+# Unlike the per-image build pipelines (python-dev.yaml / python-distroless.yaml),
+# which TRANSFORM images (CA injection via incert, apk Artifactory mirroring,
+# re-signing), this lane copies images AS-IS with cgr-sync — preserving the
+# multi-arch index and the upstream Chainguard cosign signatures / attestations
+# (which a `docker build … && docker push` would drop), and verifying the
+# upstream signature before each copy.
+#
+# Add a pass-through image by appending one entry under `repositories`.
+
+defaults:
+  source: cgr.dev/chriscarty.com
+  # Full GAR path, e.g. <region>-docker.pkg.dev/<project>/<repo>. Supplied by the
+  # workflow from the DEST_REGISTRY secret (${VAR} is expanded from the env).
+  destination: ${DEST_REGISTRY}
+  tags:
+    list: ["latest"]
+  # Verify the upstream Chainguard signature before mirroring (same identity the
+  # build pipelines verify against). A failed check blocks the copy.
+  verify:
+    enabled: true
+    certificate_identity: https://github.com/chainguard-images/images-private/.github/workflows/release.yaml@refs/heads/main
+    certificate_oidc_issuer: https://token.actions.githubusercontent.com
+
+repositories:
+  # Distroless python, mirrored as-is. (The 3.12-dev variant stays in the build
+  # pipeline because it is transformed — apk repos repointed to Artifactory.)
+  - name: python
+    tags:
+      list: ["latest", "3.12"]
