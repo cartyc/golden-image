@@ -43,11 +43,11 @@ flowchart TB
 
 ### 1. Build / transform lane — `.github/workflows/python-*.yaml`
 
-For images that need modification. Per image (Python `distroless` and `dev`):
+For images that need modification (Python `distroless`):
 
 1. `setup-chainctl` — auth to the Chainguard source registry.
 2. **cosign verify** the upstream image's provenance.
-3. **docker build** from a digest-pinned `FROM` (digestabot keeps the digest fresh). The `dev` variant repoints apk repositories to Artifactory mirrors (wolfi / extras); both stamp an `origin=chainguard` label.
+3. **docker build** from a digest-pinned `FROM` (digestabot keeps the digest fresh), stamping an `origin=chainguard` label.
 4. **grype scan** (`anchore/scan-action`).
 5. Push to Artifact Registry (date-stamped tag) → **cosign sign** → **chps-scorer** hardening score → **incert** to inject CA certs.
 
@@ -76,7 +76,6 @@ Runs on a schedule (every 6h), plus manual dispatch and on config change.
 | Secret | Used by |
 | --- | --- |
 | `DEST_REGISTRY`, `REGION`, `SERVICE_ACCOUNT_KEY` | both lanes (Artifact Registry destination + auth) |
-| `ARTIFACTORY_HOSTNAME`, `ARTIFACTORY_USER_PROFILE`, `WOLFI_TOKEN`, `EXTRAS_TOKEN` | `dev` build (apk Artifactory mirrors) |
 | `IMAGE_SYNCER_TOKEN` | pass-through lane (read access to `cartyc/image-syncer` to build `cgr-sync`) |
 
 ## To Do
