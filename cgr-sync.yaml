@@ -48,3 +48,15 @@ repositories:
       enabled: true
       certificate_oidc_issuer: https://issuer.enforce.dev
       certificate_identity_regexp: https://issuer.enforce.dev/834556885ebd02f51dc11f57b826ec01ed24d377/.*
+
+  # Custom Assembly jdk variant, built & signed by Chainguard from
+  # custom-assembly/jdk.yaml. Same notes as custom-python — run the one-time
+  # `chainctl image repo build edit --parent chriscarty.com --repo jdk
+  # --save-as custom-jdk` bootstrap first.
+  - name: custom-jdk
+    tags:
+      list: ["latest"]
+    verify:
+      enabled: true
+      certificate_oidc_issuer: https://issuer.enforce.dev
+      certificate_identity_regexp: https://issuer.enforce.dev/834556885ebd02f51dc11f57b826ec01ed24d377/.*
