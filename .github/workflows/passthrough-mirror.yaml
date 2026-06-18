@@ -48,22 +48,18 @@ jobs:
       - name: Docker auth for Artifact Registry
         run: gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
 
-      - name: Checkout cgr-sync source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          repository: cartyc/image-syncer
-          path: .image-syncer
-          token: ${{ secrets.IMAGE_SYNCER_TOKEN }} # PAT/deploy key with read access
-
-      - name: Set up Go
-        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b
-        with:
-          go-version: "1.26"
-
-      - name: Build cgr-sync
+      # Pull the pinned cgr-sync release image and extract its binary, instead
+      # of checking out the source and building it. The binary runs on the
+      # runner so it reuses the host keychain (cgr.dev + GAR auth above) and the
+      # host cosign for verify-before-mirror. Bump CGR_SYNC_IMAGE to upgrade.
+      - name: Fetch cgr-sync binary
+        env:
+          CGR_SYNC_IMAGE: ghcr.io/cartyc/image-syncer:v0.1.0
         run: |
-          cd .image-syncer
-          go build -o "$RUNNER_TEMP/cgr-sync" ./cmd/cgr-sync
+          cid=$(docker create "$CGR_SYNC_IMAGE")
+          docker cp "$cid:/usr/bin/cgr-sync" "$RUNNER_TEMP/cgr-sync"
+          docker rm "$cid" >/dev/null
+          "$RUNNER_TEMP/cgr-sync" -version
 
       - name: Mirror images
         run: |
