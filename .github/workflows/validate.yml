@@ -1,0 +1,43 @@
+name: validate
+
+# Lint the workflows and configs on every PR and push to main:
+#   - actionlint  : GitHub Actions syntax + expressions (+ shellcheck on run:)
+#   - yamllint    : YAML hygiene incl. duplicate keys
+#   - config check: cgr-sync.yaml / custom-assembly overlays parse, and the
+#                   image-list helper the verify job depends on still works
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: actionlint
+        run: |
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+      - name: yamllint
+        run: |
+          pipx install yamllint
+          yamllint -d relaxed .github/ cgr-sync.yaml custom-assembly/
+
+      - name: Validate configs + image-list helper
+        run: |
+          python3 - <<'PY'
+          import glob, yaml
+          for f in sorted(glob.glob("custom-assembly/*.yaml")) + ["cgr-sync.yaml"]:
+              yaml.safe_load(open(f))
+              print("parsed", f)
+          PY
+          out=$(python3 scripts/list-golden-images.py cgr-sync.yaml)
+          if [ -z "$out" ]; then echo "list-golden-images.py produced no images"; exit 1; fi
+          echo "image list:"; echo "$out"
