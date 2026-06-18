@@ -68,3 +68,73 @@ jobs:
       - name: Mirror images
         run: |
           "$RUNNER_TEMP/cgr-sync" sync -config cgr-sync.yaml -continue-on-error
+
+  # Independently verify the golden images that landed in Artifact Registry:
+  # a grype CVE scan (gate) plus a cosign SBOM-attestation check. Runs after the
+  # mirror regardless of its outcome (so images that did land are still checked);
+  # images not yet present (e.g. a pre-bootstrap custom-*) are skipped.
+  verify:
+    needs: mirror
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DEST_REGISTRY: ${{ secrets.DEST_REGISTRY }}
+      # Lowest severity that fails the scan; override with a repo/org variable.
+      GRYPE_FAIL_ON: ${{ vars.GRYPE_FAIL_ON || 'critical' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935
+        with:
+          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@77e7a554d41e2ee56fc945c52dfd3f33d12def9a
+
+      - name: Docker auth for Artifact Registry
+        run: gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.8.1
+
+      - name: Install grype
+        run: curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Scan + verify golden images
+        run: |
+          set -uo pipefail
+          python3 scripts/list-golden-images.py cgr-sync.yaml > "$RUNNER_TEMP/images.tsv"
+          fail=0
+          while IFS=$'\t' read -r name tag issuer identity idregex; do
+            ref="${DEST_REGISTRY}/${name}:${tag}"
+            if ! docker manifest inspect "$ref" >/dev/null 2>&1; then
+              echo "::notice::skip ${ref} (not present yet — e.g. a pre-bootstrap custom image)"
+              continue
+            fi
+            echo "::group::verify ${ref}"
+
+            # CVE gate.
+            if grype "$ref" --fail-on "$GRYPE_FAIL_ON" -q; then
+              echo "grype: ok (no findings >= ${GRYPE_FAIL_ON})"
+            else
+              echo "::error::grype found findings >= ${GRYPE_FAIL_ON} in ${ref}"; fail=1
+            fi
+
+            # SBOM attestation, signed by the same identity cgr-sync mirrors under.
+            args=(--type spdx --certificate-oidc-issuer "$issuer")
+            [ -n "$identity" ] && args+=(--certificate-identity "$identity")
+            [ -n "$idregex" ]  && args+=(--certificate-identity-regexp "$idregex")
+            if cosign verify-attestation "${args[@]}" "$ref" >/dev/null 2>&1; then
+              echo "cosign: SBOM attestation verified"
+            else
+              echo "::error::SBOM attestation verification failed for ${ref}"; fail=1
+            fi
+
+            echo "::endgroup::"
+          done < "$RUNNER_TEMP/images.tsv"
+          exit $fail

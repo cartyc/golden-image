@@ -48,6 +48,7 @@ Mirrors images **as-is** from `cgr.dev` into the registry with [`cgr-sync`](http
 - **Verifies** each image's signature before copying (Chainguard's signing identity; Custom Assembly images use the org's build identity — see `cgr-sync.yaml`).
 - **Diffs by digest** — only copies what's missing or changed, so re-runs are cheap.
 - Adding an image is a one-line entry in `cgr-sync.yaml`.
+- After mirroring, a **`verify` job independently checks each golden image in Artifact Registry**: a `grype` CVE scan (fails on `critical` by default — set the `GRYPE_FAIL_ON` variable to adjust) plus a `cosign verify-attestation` SBOM check, reusing the per-image identities from `cgr-sync.yaml`.
 
 Runs on a schedule (every 6h), plus manual dispatch and on config change.
 
