@@ -30,3 +30,21 @@ repositories:
   - name: python
     tags:
       list: ["latest", "3.12"]
+
+  # Custom Assembly variant (bash + curl + internal CA), built & signed by
+  # Chainguard from custom-assembly/python.yaml. Mirrored as-is like any other
+  # cgr.dev image. NOTE: only mirrors once the image exists — run the one-time
+  # `chainctl image repo build edit --parent chriscarty.com --repo python
+  # --save-as custom-python` bootstrap first.
+  - name: custom-python
+    tags:
+      list: ["latest"]
+    # Custom Assembly images are signed by your org's CA builder identity (not
+    # the upstream chainguard-images release identity), so override verify with
+    # the enforce.dev issuer scoped to this org's UIDP. Tighten the regexp to
+    # the exact catalog-syncer / apko-builder identity IDs if you want — see
+    # https://edu.chainguard.dev/chainguard/chainguard-images/how-to-use/verifying-chainguard-images-and-metadata-signatures-with-cosign/
+    verify:
+      enabled: true
+      certificate_oidc_issuer: https://issuer.enforce.dev
+      certificate_identity_regexp: https://issuer.enforce.dev/834556885ebd02f51dc11f57b826ec01ed24d377/.*
