@@ -1,0 +1,30 @@
+# Chainguard Custom Assembly overlay for the golden python image.
+#
+# Replaces the former python/Dockerfile.dev: instead of a derived Dockerfile,
+# Chainguard assembles and SIGNS the customized image server-side from this
+# apko overlay. Applied by .github/workflows/custom-assembly.yaml via
+# `chainctl images repos build apply`.
+
+contents:
+  # Additional packages baked into the image (from your entitled repos).
+  packages:
+    - bash
+    - curl
+
+annotations:
+  # Preserves the `LABEL origin="chainguard"` from the old Dockerfile.
+  origin: chainguard
+
+# Optional — bundle an internal CA into the system truststore (replaces the
+# incert step). Requires the Custom Assembly "custom certificates" Beta; ask
+# your Chainguard Customer Success team to enable it. Either inline the PEM
+# here, or pass the file at apply time with:
+#   chainctl images repos build apply ... --with-certificates python/cert.crt
+#
+# certificates:
+#   additional:
+#     - name: internal-root-ca
+#       content: |
+#         -----BEGIN CERTIFICATE-----
+#         ...
+#         -----END CERTIFICATE-----

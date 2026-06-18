@@ -86,3 +86,17 @@ Runs on a schedule (every 6h), plus manual dispatch and on config change.
 - Expand the pass-through catalog beyond Python
 
 _Done since the initial example: cosign verification (both lanes), incert CA injection, hardening scores via chps._
+
+## Custom Assembly (`custom-assembly/`)
+
+Some customizations are better done **server-side** with [Chainguard Custom Assembly](https://edu.chainguard.dev/chainguard/chainguard-images/features/ca-docs/custom-assembly/): Chainguard assembles and signs the customized image for you, so there's no derived Dockerfile to maintain and the change is recorded in the image's provenance.
+
+`custom-assembly/python.yaml` adds `bash` and `curl` to the python image — replacing the former `python/Dockerfile.dev`. `.github/workflows/custom-assembly.yaml` applies it: `--dry-run` on PRs (drift preview), `apply --yes` on merge.
+
+**One-time bootstrap** — the declarative `apply` can't create an image (`--save-as` only works with `edit`), so create the custom image once:
+
+```sh
+chainctl image repo build edit --parent chriscarty.com --repo python --save-as custom-python
+```
+
+The result, `cgr.dev/chriscarty.com/custom-python`, is built and signed by Chainguard — so the **pass-through lane** can mirror it to Artifact Registry like any other image (add it to `cgr-sync.yaml`). Bundling an internal CA cert (replacing incert) is available via the Custom Assembly custom-certificates Beta; see the commented block in `custom-assembly/python.yaml`.
