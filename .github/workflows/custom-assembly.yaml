@@ -1,27 +1,27 @@
 name: Custom Assembly build
 
-# Build the customized python image (bash + curl) via Chainguard Custom
-# Assembly — Chainguard assembles and signs it server-side from
-# custom-assembly/python.yaml. Replaces the docker-build-based python-dev flow.
+# Build customized images (bash + curl, internal CA) via Chainguard Custom
+# Assembly — Chainguard assembles and signs them server-side from the overlays
+# in custom-assembly/. Replaces the docker-build-based pipelines.
 #
-# One-time bootstrap (the declarative `apply` cannot create an image, and
-# `--save-as` only works with `edit`):
+# One-time bootstrap per image (the declarative `apply` cannot create an image,
+# and `--save-as` only works with `edit`):
 #
-#   chainctl image repo build edit --parent chriscarty.com --repo python \
-#     --save-as custom-python
+#   chainctl image repo build edit --parent chriscarty.com --repo python --save-as custom-python
+#   chainctl image repo build edit --parent chriscarty.com --repo jdk    --save-as custom-jdk
 #
-# After that, this workflow keeps custom-python in sync with the config.
+# After that, this workflow keeps each custom image in sync with its overlay.
 
 on:
   push:
     branches: [main]
     paths:
-      - custom-assembly/python.yaml
+      - custom-assembly/**
       - .github/workflows/custom-assembly.yaml
   pull_request:
     branches: [main]
     paths:
-      - custom-assembly/python.yaml
+      - custom-assembly/**
       - .github/workflows/custom-assembly.yaml
   workflow_dispatch: {}
 
@@ -33,9 +33,16 @@ jobs:
     permissions:
       contents: read
       id-token: write # assume the Chainguard identity
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - file: custom-assembly/python.yaml
+            repo: custom-python
+          - file: custom-assembly/jdk.yaml
+            repo: custom-jdk
     env:
       PARENT: chriscarty.com
-      REPO: custom-python
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -46,17 +53,17 @@ jobs:
           identity: 834556885ebd02f51dc11f57b826ec01ed24d377/60bc36d56b605215
 
       # On PRs: preview only — non-zero exit if the live config would change.
-      - name: Preview config (drift check)
+      - name: Preview ${{ matrix.repo }} (drift check)
         if: github.event_name == 'pull_request'
         run: |
           chainctl images repos build apply \
-            --file custom-assembly/python.yaml \
-            --parent "$PARENT" --repo "$REPO" --dry-run
+            --file "${{ matrix.file }}" \
+            --parent "$PARENT" --repo "${{ matrix.repo }}" --dry-run
 
       # On main / manual dispatch: apply and trigger the build.
-      - name: Apply config and build
+      - name: Apply ${{ matrix.repo }} and build
         if: github.event_name != 'pull_request'
         run: |
           chainctl images repos build apply \
-            --file custom-assembly/python.yaml \
-            --parent "$PARENT" --repo "$REPO" --yes
+            --file "${{ matrix.file }}" \
+            --parent "$PARENT" --repo "${{ matrix.repo }}" --yes

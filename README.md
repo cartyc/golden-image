@@ -81,12 +81,13 @@ _The docker-build "transform" lane (build → grype → sign → chps → incert
 
 Some customizations are better done **server-side** with [Chainguard Custom Assembly](https://edu.chainguard.dev/chainguard/chainguard-images/features/ca-docs/custom-assembly/): Chainguard assembles and signs the customized image for you, so there's no derived Dockerfile to maintain and the change is recorded in the image's provenance.
 
-`custom-assembly/python.yaml` adds `bash` and `curl` to the python image — replacing the former docker-build pipelines (`python/Dockerfile.dev` and the distroless build). `.github/workflows/custom-assembly.yaml` applies it: `--dry-run` on PRs (drift preview), `apply --yes` on merge.
+`custom-assembly/python.yaml` (and `custom-assembly/jdk.yaml`) add `bash` and `curl` plus the internal CA to the python and jdk images — replacing the former docker-build pipelines (`python/Dockerfile.dev` and the distroless build). `.github/workflows/custom-assembly.yaml` applies every overlay in `custom-assembly/` (a matrix over the images): `--dry-run` on PRs (drift preview), `apply --yes` on merge.
 
 **One-time bootstrap** — the declarative `apply` can't create an image (`--save-as` only works with `edit`), so create the custom image once:
 
 ```sh
 chainctl image repo build edit --parent chriscarty.com --repo python --save-as custom-python
+chainctl image repo build edit --parent chriscarty.com --repo jdk    --save-as custom-jdk
 ```
 
 The result, `cgr.dev/chriscarty.com/custom-python`, is built and signed by Chainguard — so the **pass-through lane** mirrors it to Artifact Registry like any other image (it's already wired into `cgr-sync.yaml`, with a verify policy scoped to the Custom Assembly signing identity). It only mirrors once the bootstrap above has created the image. The overlay also bundles the internal CA from `python/cert.crt` into the system truststore (replacing incert); this uses the Custom Assembly custom-certificates **Beta**, which must be enabled for your org before the config will apply.
