@@ -4,7 +4,7 @@
 
 - Demonstrate an ingestion pipeline for Chainguard images into a Golden Images repository
 - Assume a Platform Engineer perspective
-- Demonstrate best practices — digestabot, pinning by digest instead of tags, signature verification, signing, and hardening scoring
+- Demonstrate best practices — server-side customization via Custom Assembly, signature verification before mirroring, and preserving upstream signatures/attestations
 
 ## Non-Goals
 
@@ -12,22 +12,12 @@
 
 ## Pipeline overview
 
-Two complementary lanes feed the golden-images registry (Google Artifact Registry):
+Two complementary lanes feed the golden-images registry (Google Artifact Registry). Customization happens **server-side** with Chainguard Custom Assembly (no derived Dockerfiles), and everything reaches Artifact Registry through the `cgr-sync` pass-through mirror:
 
 ```mermaid
 flowchart TB
   src[("cgr.dev<br/>Chainguard source")]
   gar[("Google Artifact Registry<br/>golden images")]
-
-  subgraph build["Build / transform lane — python-distroless.yaml"]
-    direction TB
-    v1["cosign verify upstream"] --> bld["docker build<br/>digest-pinned FROM"]
-    bld --> scn["grype scan"]
-    scn --> psh["push (dated tag)"]
-    psh --> sgn["cosign sign"]
-    sgn --> chp["chps score"]
-    chp --> inc["incert CA inject"]
-  end
 
   subgraph ca["Custom Assembly — custom-assembly/*.yaml"]
     direction TB
@@ -40,35 +30,24 @@ flowchart TB
     cs["cgr-sync<br/>verify · diff-by-digest<br/>preserve index + signatures"]
   end
 
-  src -->|"needs transform"| v1
   src -->|"customize server-side"| cfg
   src -->|"ship as-is"| cs
   built -->|"custom image on cgr.dev"| cs
-  inc --> gar
   cs --> gar
-  dab["digestabot<br/>daily digest PRs"] -.->|"bump FROM"| bld
 ```
 
-### 1. Build / transform lane — `.github/workflows/python-*.yaml`
+### 1. Custom Assembly — `custom-assembly/*.yaml`
 
-For images that need modification (Python `distroless`):
-
-1. `setup-chainctl` — auth to the Chainguard source registry.
-2. **cosign verify** the upstream image's provenance.
-3. **docker build** from a digest-pinned `FROM` (digestabot keeps the digest fresh), stamping an `origin=chainguard` label.
-4. **grype scan** (`anchore/scan-action`).
-5. Push to Artifact Registry (date-stamped tag) → **cosign sign** → **chps-scorer** hardening score → **incert** to inject CA certs.
-
-Triggered on changes under `python/**`; **digestabot** opens daily digest-bump PRs.
+For images that need modification (extra packages, certificates, annotations). Chainguard assembles and **signs** the customized image server-side from an apko overlay — there's no derived Dockerfile to maintain, and the customization is captured in the image's provenance. See the [Custom Assembly](#custom-assembly-custom-assembly) section below.
 
 ### 2. Pass-through lane — `cgr-sync.yaml` + `.github/workflows/passthrough-mirror.yaml`
 
-For images shipped **as-is**. Uses [`cgr-sync`](https://github.com/cartyc/image-syncer) to mirror straight from `cgr.dev` into the registry:
+Mirrors images **as-is** from `cgr.dev` into the registry with [`cgr-sync`](https://github.com/cartyc/image-syncer) — including the Custom Assembly images built above:
 
-- Preserves the **multi-arch index** and the **upstream cosign signatures / attestations** — which a `docker build … && docker push` flattens away.
-- **Verifies** each image's signature before copying (the same identity the build lane checks).
+- Preserves the **multi-arch index** and the **upstream cosign signatures / attestations**.
+- **Verifies** each image's signature before copying (Chainguard's signing identity; Custom Assembly images use the org's build identity — see `cgr-sync.yaml`).
 - **Diffs by digest** — only copies what's missing or changed, so re-runs are cheap.
-- Adding an image is a one-line entry in `cgr-sync.yaml` instead of a new workflow.
+- Adding an image is a one-line entry in `cgr-sync.yaml`.
 
 Runs on a schedule (every 6h), plus manual dispatch and on config change.
 
@@ -76,30 +55,33 @@ Runs on a schedule (every 6h), plus manual dispatch and on config change.
 
 | The image… | Lane |
 | --- | --- |
-| needs CA injection, apk mirroring, FIPS, or other modification | **build / transform** |
-| ships unmodified | **pass-through** (faster, preserves upstream provenance) |
+| needs extra packages, certs, or other modification | **Custom Assembly** (built + signed by Chainguard) |
+| ships unmodified | **pass-through** |
+
+Either way the image lands in Artifact Registry via the pass-through mirror.
 
 ## Required secrets
 
 | Secret | Used by |
 | --- | --- |
-| `DEST_REGISTRY`, `REGION`, `SERVICE_ACCOUNT_KEY` | both lanes (Artifact Registry destination + auth) |
+| `DEST_REGISTRY`, `REGION`, `SERVICE_ACCOUNT_KEY` | pass-through lane (Artifact Registry destination + auth) |
 | `IMAGE_SYNCER_TOKEN` | pass-through lane (read access to `cartyc/image-syncer` to build `cgr-sync`) |
+
+Custom Assembly authenticates with an assumable Chainguard identity via `setup-chainctl`, not a secret.
 
 ## To Do
 
-- Optimize the build pipeline (trigger only on relevant path changes, better job organization)
 - Add FIPS image validation
 - Add application image validation
-- Expand the pass-through catalog beyond Python
+- Expand the Custom Assembly and pass-through catalogs beyond Python
 
-_Done since the initial example: cosign verification (both lanes), incert CA injection, hardening scores via chps._
+_The docker-build "transform" lane (build → grype → sign → chps → incert) was retired in favor of Custom Assembly, which builds and signs customized images server-side._
 
 ## Custom Assembly (`custom-assembly/`)
 
 Some customizations are better done **server-side** with [Chainguard Custom Assembly](https://edu.chainguard.dev/chainguard/chainguard-images/features/ca-docs/custom-assembly/): Chainguard assembles and signs the customized image for you, so there's no derived Dockerfile to maintain and the change is recorded in the image's provenance.
 
-`custom-assembly/python.yaml` adds `bash` and `curl` to the python image — replacing the former `python/Dockerfile.dev`. `.github/workflows/custom-assembly.yaml` applies it: `--dry-run` on PRs (drift preview), `apply --yes` on merge.
+`custom-assembly/python.yaml` adds `bash` and `curl` to the python image — replacing the former docker-build pipelines (`python/Dockerfile.dev` and the distroless build). `.github/workflows/custom-assembly.yaml` applies it: `--dry-run` on PRs (drift preview), `apply --yes` on merge.
 
 **One-time bootstrap** — the declarative `apply` can't create an image (`--save-as` only works with `edit`), so create the custom image once:
 
