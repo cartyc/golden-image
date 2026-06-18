@@ -1,0 +1,70 @@
+name: Passthrough mirror (cgr-sync)
+
+# Mirror pass-through Chainguard images straight into the golden-images registry
+# using cgr-sync (github.com/cartyc/image-syncer). This preserves multi-arch
+# indexes and the upstream cosign signatures/attestations — which a docker
+# build/push flattens away — and verifies each image's signature before copying.
+# Complements the per-image build pipelines, which TRANSFORM images.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *" # reconcile the catalog every 6h
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - cgr-sync.yaml
+      - .github/workflows/passthrough-mirror.yaml
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # setup-chainctl (source auth)
+    env:
+      # Consumed by cgr-sync.yaml as ${DEST_REGISTRY}.
+      DEST_REGISTRY: ${{ secrets.DEST_REGISTRY }}
+    steps:
+      - name: Checkout (golden-image)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Auth to Chainguard source (cgr.dev)
+        uses: chainguard-dev/setup-chainctl@main
+        with:
+          identity: 834556885ebd02f51dc11f57b826ec01ed24d377/60bc36d56b605215
+
+      - name: Install cosign (verify-before-mirror)
+        uses: sigstore/cosign-installer@v3.8.1
+
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935
+        with:
+          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@77e7a554d41e2ee56fc945c52dfd3f33d12def9a
+
+      - name: Docker auth for Artifact Registry
+        run: gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
+
+      - name: Checkout cgr-sync source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: cartyc/image-syncer
+          path: .image-syncer
+          token: ${{ secrets.IMAGE_SYNCER_TOKEN }} # PAT/deploy key with read access
+
+      - name: Set up Go
+        uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b
+        with:
+          go-version: "1.26"
+
+      - name: Build cgr-sync
+        run: |
+          cd .image-syncer
+          go build -o "$RUNNER_TEMP/cgr-sync" ./cmd/cgr-sync
+
+      - name: Mirror images
+        run: |
+          "$RUNNER_TEMP/cgr-sync" sync -config cgr-sync.yaml -continue-on-error
