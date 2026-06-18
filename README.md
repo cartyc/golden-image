@@ -66,9 +66,11 @@ Either way the image lands in Artifact Registry via the pass-through mirror.
 | Secret | Used by |
 | --- | --- |
 | `DEST_REGISTRY`, `REGION`, `SERVICE_ACCOUNT_KEY` | pass-through lane (Artifact Registry destination + auth) |
-| `IMAGE_SYNCER_TOKEN` | pass-through lane (read access to `cartyc/image-syncer` to build `cgr-sync`) |
 
-Custom Assembly authenticates with an assumable Chainguard identity via `setup-chainctl`, not a secret.
+The pass-through lane pulls a pinned `cgr-sync` release image from GHCR
+(`ghcr.io/cartyc/image-syncer`) — public, so no token is needed. Custom Assembly
+authenticates with an assumable Chainguard identity via `setup-chainctl`, also
+not a secret.
 
 ## To Do
 
