@@ -126,14 +126,23 @@ jobs:
               echo "::error::grype found findings >= ${GRYPE_FAIL_ON} in ${ref}"; fail=1
             fi
 
-            # SBOM attestation, signed by the same identity cgr-sync mirrors under.
+            # SBOM attestation, signed by the same identity cgr-sync mirrors
+            # under. The helper emits "-" for unset fields (never an empty
+            # column), so a regexp-only policy can't collapse into the identity
+            # slot during the tab-delimited read above.
             args=(--type spdx --certificate-oidc-issuer "$issuer")
-            [ -n "$identity" ] && args+=(--certificate-identity "$identity")
-            [ -n "$idregex" ]  && args+=(--certificate-identity-regexp "$idregex")
+            [ "$identity" != "-" ] && args+=(--certificate-identity "$identity")
+            [ "$idregex" != "-" ]  && args+=(--certificate-identity-regexp "$idregex")
             if cosign verify-attestation "${args[@]}" "$ref" >/dev/null 2>&1; then
               echo "cosign: SBOM attestation verified"
             else
               echo "::error::SBOM attestation verification failed for ${ref}"; fail=1
+              # Surface why: re-run without suppression, and list what cosign can
+              # actually discover on the mirror (sig/att tags + referrers).
+              echo "--- cosign verify-attestation stderr ---"
+              cosign verify-attestation "${args[@]}" "$ref" || true
+              echo "--- cosign tree ${ref} ---"
+              cosign tree "$ref" || true
             fi
 
             echo "::endgroup::"
