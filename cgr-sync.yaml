@@ -10,14 +10,16 @@
 # Add a pass-through image by appending one entry under `repositories`.
 
 defaults:
-  source: cgr.dev/chriscarty.com
+  # Your Chainguard org's registry namespace, supplied by the workflow from the
+  # CHAINGUARD_ORG secret (${VAR} is expanded from the env by cgr-sync at load).
+  source: cgr.dev/${CHAINGUARD_ORG}
   # Full GAR path, e.g. <region>-docker.pkg.dev/<project>/<repo>. Supplied by the
   # workflow from the DEST_REGISTRY secret (${VAR} is expanded from the env).
   destination: ${DEST_REGISTRY}
   tags:
     list: ["latest"]
   # Verify the org's cosign signature before mirroring; a failed check blocks the
-  # copy. All cgr.dev/chriscarty.com images (stock and Custom Assembly) are
+  # copy. All of the org's cgr.dev images (stock and Custom Assembly) are
   # signed keyless by an enforce.dev identity under this org's UIDP — validated
   # with `cosign verify` against the live python/jdk images. The UIDP is injected
   # from the CHAINGUARD_ORG_UIDP env (a repo secret set by the workflow);
@@ -37,7 +39,7 @@ repositories:
   # Custom Assembly variant (bash + curl + internal CA), built & signed by
   # Chainguard from custom-assembly/python.yaml — inherits the verify policy
   # above. Only mirrors once the image exists; run the one-time
-  # `chainctl image repo build edit --parent chriscarty.com --repo python --save-as custom-python`
+  # `chainctl image repo build edit --parent <your-org> --repo python --save-as custom-python`
   # bootstrap first.
   - name: custom-python
     tags:

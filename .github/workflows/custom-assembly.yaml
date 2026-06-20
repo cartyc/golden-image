@@ -7,8 +7,8 @@ name: Custom Assembly build
 # One-time bootstrap per image (the declarative `apply` cannot create an image,
 # and `--save-as` only works with `edit`):
 #
-#   chainctl image repo build edit --parent chriscarty.com --repo python --save-as custom-python
-#   chainctl image repo build edit --parent chriscarty.com --repo jdk    --save-as custom-jdk
+#   chainctl image repo build edit --parent <your-org> --repo python --save-as custom-python
+#   chainctl image repo build edit --parent <your-org> --repo jdk    --save-as custom-jdk
 #
 # After that, this workflow keeps each custom image in sync with its overlay.
 
@@ -42,7 +42,7 @@ jobs:
           - file: custom-assembly/jdk.yaml
             repo: custom-jdk
     env:
-      PARENT: chriscarty.com
+      PARENT: ${{ secrets.CHAINGUARD_ORG }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -53,8 +53,10 @@ jobs:
           identity: ${{ secrets.CHAINGUARD_IDENTITY }}
 
       # On PRs: preview only — non-zero exit if the live config would change.
+      # Skip on fork PRs: secrets/OIDC aren't available there, so the assume
+      # would fail anyway — and we never want to run authed steps for forks.
       - name: Preview ${{ matrix.repo }} (drift check)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           chainctl images repos build apply \
             --file "${{ matrix.file }}" \
