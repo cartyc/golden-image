@@ -30,9 +30,14 @@ def main(path: str) -> None:
         verify = repo.get("verify") or default_verify
         tags = (repo.get("tags", {}) or {}).get("list") or default_tags
         for tag in tags:
+            # Emit "-" for empty fields, never an empty column: a blank
+            # certificate_identity (regexp-only policy) would otherwise produce
+            # adjacent tabs, which `read` with whitespace IFS collapses — shifting
+            # the regexp into the identity slot in the consuming shell loop.
             print(
                 "\t".join(
-                    [
+                    field or "-"
+                    for field in [
                         repo["name"],
                         str(tag),
                         verify.get("certificate_oidc_issuer", ""),
