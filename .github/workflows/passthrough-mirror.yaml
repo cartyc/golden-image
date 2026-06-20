@@ -23,8 +23,9 @@ jobs:
       contents: read
       id-token: write # setup-chainctl (source auth)
     env:
-      # Consumed by cgr-sync.yaml as ${DEST_REGISTRY}.
+      # Consumed by cgr-sync.yaml as ${DEST_REGISTRY} / ${CHAINGUARD_ORG_UIDP}.
       DEST_REGISTRY: ${{ secrets.DEST_REGISTRY }}
+      CHAINGUARD_ORG_UIDP: ${{ secrets.CHAINGUARD_ORG_UIDP }}
     steps:
       - name: Checkout (golden-image)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -32,7 +33,7 @@ jobs:
       - name: Auth to Chainguard source (cgr.dev)
         uses: chainguard-dev/setup-chainctl@main
         with:
-          identity: 834556885ebd02f51dc11f57b826ec01ed24d377/60bc36d56b605215
+          identity: ${{ secrets.CHAINGUARD_IDENTITY }}
 
       - name: Install cosign (verify-before-mirror)
         uses: sigstore/cosign-installer@v3.8.1
@@ -78,6 +79,8 @@ jobs:
       id-token: write
     env:
       DEST_REGISTRY: ${{ secrets.DEST_REGISTRY }}
+      # Expands the verify identity regexp in cgr-sync.yaml for the helper below.
+      CHAINGUARD_ORG_UIDP: ${{ secrets.CHAINGUARD_ORG_UIDP }}
       # Lowest severity that fails the scan; override with a repo/org variable.
       GRYPE_FAIL_ON: ${{ vars.GRYPE_FAIL_ON || 'critical' }}
     steps:

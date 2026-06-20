@@ -19,7 +19,7 @@ jobs:
     steps:
     - uses: chainguard-dev/setup-chainctl@main
       with:
-        identity: 834556885ebd02f51dc11f57b826ec01ed24d377/60bc36d56b605215
+        identity: ${{ secrets.CHAINGUARD_IDENTITY }}
     - uses: actions/checkout@v4
     - uses: chainguard-dev/digestabot@v1.0.2
       with:

@@ -19,12 +19,13 @@ defaults:
   # Verify the org's cosign signature before mirroring; a failed check blocks the
   # copy. All cgr.dev/chriscarty.com images (stock and Custom Assembly) are
   # signed keyless by an enforce.dev identity under this org's UIDP — validated
-  # with `cosign verify` against the live python/jdk images. Tighten the regexp
-  # to a specific builder identity if desired.
+  # with `cosign verify` against the live python/jdk images. The UIDP is injected
+  # from the CHAINGUARD_ORG_UIDP env (a repo secret set by the workflow);
+  # ${VAR} is expanded by cgr-sync at load time.
   verify:
     enabled: true
     certificate_oidc_issuer: https://issuer.enforce.dev
-    certificate_identity_regexp: https://issuer.enforce.dev/834556885ebd02f51dc11f57b826ec01ed24d377/.*
+    certificate_identity_regexp: https://issuer.enforce.dev/${CHAINGUARD_ORG_UIDP}/.*
 
 repositories:
   # Distroless python, mirrored as-is. (The -dev variant's customizations now

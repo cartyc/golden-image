@@ -66,11 +66,13 @@ Either way the image lands in Artifact Registry via the pass-through mirror.
 | Secret | Used by |
 | --- | --- |
 | `DEST_REGISTRY`, `REGION`, `SERVICE_ACCOUNT_KEY` | pass-through lane (Artifact Registry destination + auth) |
+| `CHAINGUARD_IDENTITY` | all workflows — the assumable Chainguard identity for `setup-chainctl` (`<org-uidp>/<identity-id>`) |
+| `CHAINGUARD_ORG_UIDP` | pass-through verify policy — the org UIDP in the cosign identity regexp (the part before `/` in `CHAINGUARD_IDENTITY`) |
 
-The pass-through lane pulls a pinned `cgr-sync` release image from GHCR
-(`ghcr.io/cartyc/image-syncer`) — public, so no token is needed. Custom Assembly
-authenticates with an assumable Chainguard identity via `setup-chainctl`, also
-not a secret.
+These were previously hard-coded; they're org identifiers (not credentials), but
+parameterizing keeps the repo portable and free of org-specific values. The
+pass-through lane also pulls a pinned `cgr-sync` release image from GHCR
+(`ghcr.io/cartyc/image-syncer`) — public, so no token is needed.
 
 ## To Do
 
