@@ -57,7 +57,7 @@ jobs:
       # host cosign for verify-before-mirror. Bump CGR_SYNC_IMAGE to upgrade.
       - name: Fetch cgr-sync binary
         env:
-          CGR_SYNC_IMAGE: ghcr.io/cartyc/image-syncer:v0.1.1
+          CGR_SYNC_IMAGE: ghcr.io/cartyc/image-syncer:v0.1.2
         run: |
           cid=$(docker create "$CGR_SYNC_IMAGE")
           docker cp "$cid:/usr/bin/cgr-sync" "$RUNNER_TEMP/cgr-sync"
