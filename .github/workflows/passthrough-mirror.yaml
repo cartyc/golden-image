@@ -23,7 +23,9 @@ jobs:
       contents: read
       id-token: write # setup-chainctl (source auth)
     env:
-      # Consumed by cgr-sync.yaml as ${DEST_REGISTRY} / ${CHAINGUARD_ORG_UIDP}.
+      # Consumed by cgr-sync.yaml as ${CHAINGUARD_ORG} (source namespace),
+      # ${DEST_REGISTRY} (destination), and ${CHAINGUARD_ORG_UIDP} (verify regexp).
+      CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
       DEST_REGISTRY: ${{ secrets.DEST_REGISTRY }}
       CHAINGUARD_ORG_UIDP: ${{ secrets.CHAINGUARD_ORG_UIDP }}
     steps:
