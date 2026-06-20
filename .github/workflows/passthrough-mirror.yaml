@@ -134,6 +134,12 @@ jobs:
               echo "cosign: SBOM attestation verified"
             else
               echo "::error::SBOM attestation verification failed for ${ref}"; fail=1
+              # Surface why: re-run without suppression, and list what cosign can
+              # actually discover on the mirror (sig/att tags + referrers).
+              echo "--- cosign verify-attestation stderr ---"
+              cosign verify-attestation "${args[@]}" "$ref" || true
+              echo "--- cosign tree ${ref} ---"
+              cosign tree "$ref" || true
             fi
 
             echo "::endgroup::"
