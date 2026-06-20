@@ -5,10 +5,14 @@ name: Custom Assembly build
 # in custom-assembly/. Replaces the docker-build-based pipelines.
 #
 # One-time bootstrap per image (the declarative `apply` cannot create an image,
-# and `--save-as` only works with `edit`):
+# and `--save-as` only works with `edit`). Pass --file so edit uses the overlay
+# instead of an interactive editor; the CI identity also needs the repo.update
+# capability. See the README "Prerequisites" section.
 #
-#   chainctl image repo build edit --parent <your-org> --repo python --save-as custom-python
-#   chainctl image repo build edit --parent <your-org> --repo jdk    --save-as custom-jdk
+#   chainctl image repo build edit --parent <your-org> --repo python \
+#     --file custom-assembly/python.yaml --save-as custom-python
+#   chainctl image repo build edit --parent <your-org> --repo jdk \
+#     --file custom-assembly/jdk.yaml    --save-as custom-jdk
 #
 # After that, this workflow keeps each custom image in sync with its overlay.
 
