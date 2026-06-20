@@ -89,11 +89,30 @@ Some customizations are better done **server-side** with [Chainguard Custom Asse
 
 `custom-assembly/python.yaml` (and `custom-assembly/jdk.yaml`) add `bash` and `curl` plus the internal CA to the python and jdk images — replacing the former docker-build pipelines (`python/Dockerfile.dev` and the distroless build). `.github/workflows/custom-assembly.yaml` applies every overlay in `custom-assembly/` (a matrix over the images): `--dry-run` on PRs (drift preview), `apply --yes` on merge.
 
-**One-time bootstrap** — the declarative `apply` can't create an image (`--save-as` only works with `edit`), so create the custom image once:
+### Prerequisites
 
-```sh
-chainctl image repo build edit --parent <your-org> --repo python --save-as custom-python
-chainctl image repo build edit --parent <your-org> --repo jdk    --save-as custom-jdk
-```
+Before the `custom-assembly` workflow can run, complete these one-time setup steps — skipping them produces the two failures we hit on first run (`missing: repo.update` and `no repo instance found`):
 
-The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguard — so the **pass-through lane** mirrors it to Artifact Registry like any other image (it's already wired into `cgr-sync.yaml`, with a verify policy scoped to the Custom Assembly signing identity). It only mirrors once the bootstrap above has created the image. The overlay also bundles the internal CA from `python/cert.crt` into the system truststore (replacing incert); this uses the Custom Assembly custom-certificates **Beta**, which must be enabled for your org before the config will apply.
+1. **Grant the CI identity `repo.update`.** The assumable identity in `CHAINGUARD_IDENTITY` needs the `repo.update` capability, or `apply` fails with `[PermissionDenied] ... missing: repo.update`. Bind a role that includes it to the identity, e.g.:
+
+   ```sh
+   chainctl iam role-bindings create \
+     --identity=$CHAINGUARD_IDENTITY --role=<role-with-repo.update> --group=<your-org>
+   ```
+
+2. **Enable the custom-certificates Beta.** The overlays bundle an internal CA under `certificates:`; this Beta must be enabled for your org first — contact your Chainguard Customer Success team.
+
+3. **Bootstrap each custom image once.** The declarative `apply` can't *create* an image (`--save-as` only works with `edit`), so create them from the committed overlays. Pass `--file` so `edit` uses the overlay instead of opening an interactive editor (there's no `--yes`, so confirm the diff when prompted):
+
+   ```sh
+   chainctl image repo build edit --parent <your-org> --repo python \
+     --file custom-assembly/python.yaml --save-as custom-python
+   chainctl image repo build edit --parent <your-org> --repo jdk \
+     --file custom-assembly/jdk.yaml    --save-as custom-jdk
+   ```
+
+   The certs are read from the overlay's inline `certificates.additional` block; alternatively supply them from a PEM file with `--with-certificates=python/cert.crt`.
+
+After bootstrapping, the workflow keeps each custom image in sync with its overlay on every merge to `main`.
+
+The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguard — so the **pass-through lane** mirrors it to Artifact Registry like any other image (it's already wired into `cgr-sync.yaml`, with a verify policy scoped to the Custom Assembly signing identity). It only mirrors once the bootstrap above has created the image. The overlay also bundles the internal CA from `python/cert.crt` into the system truststore (replacing incert).
