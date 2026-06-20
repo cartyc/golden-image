@@ -7,14 +7,11 @@ name: Passthrough mirror (cgr-sync)
 # Complements the per-image build pipelines, which TRANSFORM images.
 
 on:
+  # Timer-driven reconcile only — the mirror runs on a schedule, not on merges.
+  # Use the manual trigger to mirror immediately after a catalog/config change.
   schedule:
     - cron: "0 */6 * * *" # reconcile the catalog every 6h
   workflow_dispatch: {}
-  push:
-    branches: [main]
-    paths:
-      - cgr-sync.yaml
-      - .github/workflows/passthrough-mirror.yaml
 
 jobs:
   mirror:
