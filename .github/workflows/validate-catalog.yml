@@ -1,0 +1,62 @@
+name: Validate catalog
+
+# Pre-merge check for changes to the pass-through catalog: every source image:tag
+# listed in cgr-sync.yaml must actually exist at the source registry. Catches a
+# typo'd repo name or a nonexistent/removed tag before it's merged and the
+# scheduled mirror tries (and fails) to copy it.
+#
+# This only checks EXISTENCE (a manifest HEAD), not the signing identity — the
+# mirror's own verify-before-mirror still gates that at copy time.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - cgr-sync.yaml
+      - scripts/list-source-refs.py
+      - .github/workflows/validate-catalog.yml
+
+permissions: {}
+
+jobs:
+  catalog-exists:
+    # Needs cgr.dev auth (org secrets + OIDC), which fork PRs don't get — skip
+    # there rather than fail. Same-repo PRs run the check.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # setup-chainctl (source auth)
+    env:
+      CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Auth to Chainguard source (cgr.dev)
+        uses: chainguard-dev/setup-chainctl@main
+        with:
+          identity: ${{ secrets.CHAINGUARD_IDENTITY }}
+
+      - name: Each source image:tag exists
+        run: |
+          set -uo pipefail
+          refs=$(python3 scripts/list-source-refs.py cgr-sync.yaml)
+          if [ -z "$refs" ]; then
+            echo "no source refs resolved from cgr-sync.yaml"; exit 1
+          fi
+          missing=0
+          while IFS= read -r ref; do
+            [ -n "$ref" ] || continue
+            if docker manifest inspect "$ref" >/dev/null 2>&1; then
+              echo "ok: ${ref}"
+            else
+              echo "::error::not found at source: ${ref}"
+              missing=1
+            fi
+          done <<< "$refs"
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::one or more catalog images/tags do not exist at the source"
+            exit 1
+          fi
+          echo "all catalog source refs exist"
