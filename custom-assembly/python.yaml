@@ -1,9 +1,9 @@
 # Chainguard Custom Assembly overlay for the golden python image.
 #
-# Replaces the former python/Dockerfile.dev: instead of a derived Dockerfile,
-# Chainguard assembles and SIGNS the customized image server-side from this
-# apko overlay. Applied by .github/workflows/custom-assembly.yaml via
-# `chainctl images repos build apply`.
+# Image-specific customizations only. Shared bits (internal CA, locale) live in
+# custom-assembly/all.yaml and are merged in at apply time. Chainguard assembles
+# and SIGNS the customized image server-side from this apko overlay. Applied by
+# .github/workflows/custom-assembly.yaml via `chainctl images repos build apply`.
 
 contents:
   # Additional packages baked into the image (from your entitled repos).
@@ -14,36 +14,3 @@ contents:
 annotations:
   # Preserves the `LABEL origin="chainguard"` from the old Dockerfile.
   origin: chainguard
-
-# Bundle your internal CA into the system truststore (replaces the incert step).
-# Requires the Custom Assembly custom-certificates Beta — ask your Chainguard
-# Customer Success team to enable it before applying.
-#
-# The cert below is a self-signed PLACEHOLDER ("Example Internal Root CA"), kept
-# in sync with python/cert.crt. Replace both with your organization's real root
-# CA before using this overlay.
-certificates:
-  additional:
-    - name: internal-root-ca
-      content: |
-        -----BEGIN CERTIFICATE-----
-        MIIDYzCCAkugAwIBAgIUCb1dsr66/RzEmCkENuOujCZ6hgMwDQYJKoZIhvcNAQEL
-        BQAwOTEUMBIGA1UECgwLRXhhbXBsZSBPcmcxITAfBgNVBAMMGEV4YW1wbGUgSW50
-        ZXJuYWwgUm9vdCBDQTAeFw0yNjA2MjAyMDM0MTFaFw0zNjA2MTcyMDM0MTFaMDkx
-        FDASBgNVBAoMC0V4YW1wbGUgT3JnMSEwHwYDVQQDDBhFeGFtcGxlIEludGVybmFs
-        IFJvb3QgQ0EwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDrbSXWgrI2
-        Tq13Q5OaknXcHIU7e3ppyrJeVPYSCzlXmErJyxVvo+4j6CLUVLU4mTv2F7y0Z8mX
-        vG5vkA4/OZ6MFGcZkARw4vsY6sEih6azBqRonV3mGZKjgd8y1plo/51/H0HC185h
-        8dWVjyekh9roNFe/QZWs/byKCo3pR3OErgP8rQuGbuaIGOvMlDsgk2DfjG3FH8mR
-        ADLVWaX8xCDGtPBBnfkECrL2M3kgTLzCi1/a5RwslGem0PLjdE6osLNVlfB4cuh5
-        V/s070sfMY3hJVZUKHSk6E6GUVNvvsHYOvWHcY0E3tKSxdSehFja5X21444urlFu
-        074a6yYdkQFzAgMBAAGjYzBhMB0GA1UdDgQWBBSrcMX/D1merEw/kNeq56Khlyx6
-        QzAfBgNVHSMEGDAWgBSrcMX/D1merEw/kNeq56Khlyx6QzAPBgNVHRMBAf8EBTAD
-        AQH/MA4GA1UdDwEB/wQEAwIBBjANBgkqhkiG9w0BAQsFAAOCAQEAJzS5r5l1fGAQ
-        O7pVC9Oahx1Q3/YAAhbiALGU/65lofurO08cnGRBn9Nr2EIFW01GkmaaUfj+WSxj
-        w12I22gyqBjtX9ZcMbfMUBsA81CkjLY3K2noz+ZKE+GI4TLTA5YNwDx6ku8xxjmm
-        j712e6qe45SJVHdGKG1eKBGWjLjPV0ymgKXz17OqY559QHUcZSsmghGlMy4ImID0
-        5jIAiiNScs9BZz8Vk3zvJDQGnuInPsEcLTOPACW4FTkW+Lt/SK5DPLH7/mpjOmOm
-        a/2e4gb6SbZPQyo99KBGR1E9ycQegtEC7EeoOFqcFEgEefn3IbN8L/tkSBKZD+b0
-        sqDvPrvf5g==
-        -----END CERTIFICATE-----
