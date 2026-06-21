@@ -50,7 +50,7 @@ Mirrors images **as-is** from `cgr.dev` into the registry with [`cgr-sync`](http
 - Adding an image is a one-line entry in `cgr-sync.yaml`.
 - After mirroring, a **`verify` job independently checks each golden image in Artifact Registry**: a `grype` CVE scan (fails on `critical` by default — set the `GRYPE_FAIL_ON` variable to adjust) plus a `cosign verify-attestation` SBOM check, reusing the per-image identities from `cgr-sync.yaml`.
 
-Runs on a schedule (every 6h), plus manual dispatch and on config change.
+Runs on a schedule (every 6h) plus manual dispatch (timer-driven — it does not run on merge; use the manual trigger to mirror a catalog change immediately).
 
 ### Which lane?
 
@@ -60,6 +60,29 @@ Runs on a schedule (every 6h), plus manual dispatch and on config change.
 | ships unmodified | **pass-through** |
 
 Either way the image lands in Artifact Registry via the pass-through mirror.
+
+## Repository layout
+
+| Path | What it is | How you use it |
+| --- | --- | --- |
+| `cgr-sync.yaml` | The **pass-through catalog** — which images/tags get mirrored as-is from `cgr.dev` into Artifact Registry, plus the signature-verify policy. | Add or remove an image by editing the `repositories:` list (one entry = a repo + its tags); shared `defaults:` cover source, destination, and verify. `${VAR}` placeholders are filled from the workflow's secrets at run time. |
+| `custom-assembly/` | Chainguard **Custom Assembly** overlays — declarative, server-side image customizations (apko). | See the table rows below; the build workflow merges the base with each per-image overlay and applies the result. |
+| &nbsp;&nbsp;`custom-assembly/all.yaml` | The **base** overlay, merged into **every** custom image. | Put things that should apply everywhere here — common packages, env vars, annotations, and the internal CA. Edit this to change all custom images at once. |
+| &nbsp;&nbsp;`custom-assembly/<image>.yaml` | A **per-image** overlay (e.g. `python.yaml`, `jdk.yaml`). | Image-specific packages/config, layered on top of `all.yaml`. The filename maps to a target repo in the build workflow's matrix; to customize one image, edit its file. |
+| `python/cert.crt` | The internal CA certificate (PEM) bundled into custom images. | A self-signed **placeholder** ("Example Internal Root CA") — replace it with your org's real root CA, and keep it in sync with the inlined copy in `all.yaml`. |
+| `scripts/` | Helper scripts the CI calls (they both read `cgr-sync.yaml`). | `list-golden-images.py` → emits the verify targets for the post-mirror check; `list-source-refs.py` → emits source refs for the pre-merge existence check. Not run by hand normally. |
+| `.github/workflows/` | The CI lanes (see the next table). | — |
+| `LICENSE` | Apache-2.0. | — |
+
+### Workflows (`.github/workflows/`)
+
+| Workflow | Triggers | What it does |
+| --- | --- | --- |
+| `passthrough-mirror.yaml` | schedule (6h) + manual | Mirrors the `cgr-sync.yaml` catalog into Artifact Registry with `cgr-sync` (verify-before-mirror, signatures/attestations preserved), then independently verifies each landed image (grype CVE gate + cosign SBOM attestation). |
+| `custom-assembly.yaml` | PR/push on `custom-assembly/**` + manual | Merges `all.yaml` with each per-image overlay and applies it via `chainctl` so Chainguard builds + signs the custom image — `--dry-run` preview on PRs, real apply on merge to `main`. |
+| `validate.yml` | every PR + push to `main` | Lints the workflows and configs (`actionlint`, `yamllint`) and confirms `cgr-sync.yaml` / overlays parse. |
+| `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
+| `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
 
 ## Required secrets
 
