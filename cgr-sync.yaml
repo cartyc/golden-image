@@ -38,10 +38,10 @@ repositories:
 
   - name: jdk
     tags:
-      list: ["latest", "21", "21-dev"]
+      list: ["latest", "openjdk-21", "openjdk-21-dev"]
   - name: jre
     tags:
-      list: ["latest", "21", "21-dev"]
+      list: ["latest", "openjdk-21", "openjdk-21-dev"]
   # Custom Assembly variant (bash + curl + internal CA), built & signed by
   # Chainguard from custom-assembly/python.yaml — inherits the verify policy
   # above. Only mirrors once the image exists; run the one-time
