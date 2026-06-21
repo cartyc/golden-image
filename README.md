@@ -139,3 +139,55 @@ Before the `custom-assembly` workflow can run, complete these one-time setup ste
 After bootstrapping, the workflow keeps each custom image in sync with its overlay on every merge to `main`.
 
 The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguard — so the **pass-through lane** mirrors it to Artifact Registry like any other image (it's already wired into `cgr-sync.yaml`, with a verify policy scoped to the Custom Assembly signing identity). It only mirrors once the bootstrap above has created the image. The overlay also bundles the internal CA from `python/cert.crt` into the system truststore (replacing incert).
+
+## Runbook — common tasks
+
+> PRs target `main`. The pass-through mirror is timer-driven, so after merging a catalog change either wait for the next 6h run or trigger it manually.
+
+### Add a pass-through image (mirror as-is)
+
+1. Add an entry to `cgr-sync.yaml` under `repositories:`:
+   ```yaml
+   - name: redis
+     tags:
+       list: ["latest", "7"]
+   ```
+2. Open a PR. **`validate-catalog`** confirms every `image:tag` exists at `cgr.dev` before merge; **`validate`** lints the config.
+3. Merge, then mirror it now instead of waiting: `gh workflow run passthrough-mirror.yaml` (or **Actions → Passthrough mirror → Run workflow**).
+4. The `verify` job gates it (grype CVE scan + cosign SBOM attestation). A signing-identity mismatch means the tag is signed by a different identity than the policy allows — see *Verify failures* below.
+
+### Customize **all** custom images
+
+Edit `custom-assembly/all.yaml` (the base merged into every custom image), open a PR. The `custom-assembly` job posts a per-image **diff** (informational); on merge it applies and Chainguard rebuilds each image.
+
+### Customize **one** image
+
+Edit that image's `custom-assembly/<image>.yaml` (e.g. `python.yaml`). It's layered on top of `all.yaml` at apply time.
+
+### Add a brand-new custom image
+
+1. **One-time bootstrap** (the declarative `apply` can't create an image):
+   ```sh
+   chainctl image repo build edit --parent <your-org> --repo <base-image> \
+     --file custom-assembly/<new>.yaml --save-as custom-<new>
+   ```
+2. Add a matrix entry in `custom-assembly.yaml` (`file:` + `repo:`).
+3. Add `custom-<new>` to `cgr-sync.yaml` so it gets mirrored to Artifact Registry.
+
+### Rotate / replace the internal CA
+
+Replace **both** `python/cert.crt` and the inlined PEM in `custom-assembly/all.yaml` (keep them identical), open a PR, merge. The next `custom-assembly` apply rebuilds every image with the new CA.
+
+### Change the locale (or other base env/packages)
+
+Edit `custom-assembly/all.yaml` — e.g. swap `glibc-locale-fr` / `LANG` for another locale package + value. Applies to all custom images on merge.
+
+### Upgrade `cgr-sync`
+
+Bump `CGR_SYNC_IMAGE: ghcr.io/cartyc/image-syncer:vX.Y.Z` in `passthrough-mirror.yaml`, open a PR, merge.
+
+### Verify failures
+
+- **`grype found findings >= critical`** — a real CVE in the mirrored image. Triage upstream; to change the gate set the `GRYPE_FAIL_ON` repo variable (e.g. `high`).
+- **`no matching signatures … got subjects [chainguard-images/images-private…]`** — the tag is signed by Chainguard's **public-catalog** identity, not your org's. Either give that repo a verify policy that accepts both identities, or drop the tag.
+- **`SBOM attestation verification failed`** — check the identity regexp resolves (the `CHAINGUARD_ORG_UIDP` secret) and that the attestation exists on the mirror (`cosign tree <ref>`).
