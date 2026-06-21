@@ -69,15 +69,21 @@ jobs:
           cat "$RUNNER_TEMP/merged.yaml"
           echo "::endgroup::"
 
-      # On PRs: preview only — non-zero exit if the live config would change.
-      # Skip on fork PRs: secrets/OIDC aren't available there, so the assume
-      # would fail anyway — and we never want to run authed steps for forks.
-      - name: Preview ${{ matrix.repo }} (drift check)
+      # On PRs: preview the change, informational only. `apply --dry-run` exits
+      # non-zero whenever config WOULD change — the normal case for a PR that
+      # edits an overlay — so don't gate on it; just surface the diff. The real
+      # apply runs on merge. Skip on fork PRs: secrets/OIDC aren't available
+      # there, so the assume would fail anyway.
+      - name: Preview ${{ matrix.repo }} (diff)
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
-          chainctl images repos build apply \
-            --file "$RUNNER_TEMP/merged.yaml" \
-            --parent "$PARENT" --repo "${{ matrix.repo }}" --dry-run
+          if chainctl images repos build apply \
+               --file "$RUNNER_TEMP/merged.yaml" \
+               --parent "$PARENT" --repo "${{ matrix.repo }}" --dry-run; then
+            echo "${{ matrix.repo }}: no pending changes"
+          else
+            echo "::notice::${{ matrix.repo }}: merging this PR will update its live Custom Assembly config (diff above)"
+          fi
 
       # On main / manual dispatch: apply and trigger the build.
       - name: Apply ${{ matrix.repo }} and build
