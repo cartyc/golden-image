@@ -20,8 +20,8 @@ environment:
 # Requires the Custom Assembly custom-certificates Beta — ask your Chainguard
 # Customer Success team to enable it before applying.
 #
-# Self-signed PLACEHOLDER ("Example Internal Root CA"), kept in sync with
-# python/cert.crt. Replace both with your organization's real root CA.
+# Self-signed PLACEHOLDER ("Example Internal Root CA") — replace with your
+# organization's real root CA.
 certificates:
   additional:
     - name: internal-root-ca
