@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Auth to Chainguard source (cgr.dev)
-        uses: chainguard-dev/setup-chainctl@main
+        uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
         with:
           identity: ${{ secrets.CHAINGUARD_IDENTITY }}
 
