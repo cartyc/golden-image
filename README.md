@@ -71,6 +71,7 @@ Either way the image lands in Artifact Registry via the pass-through mirror.
 | &nbsp;&nbsp;`custom-assembly/<image>.yaml` | A **per-image** overlay (e.g. `python.yaml`, `jdk.yaml`). | Image-specific packages/config, layered on top of `all.yaml`. The filename maps to a target repo in the build workflow's matrix; to customize one image, edit its file. |
 | `scripts/` | Helper scripts the CI calls (they both read `cgr-sync.yaml`). | `list-golden-images.py` → emits the verify targets for the post-mirror check; `list-source-refs.py` → emits source refs for the pre-merge existence check. Not run by hand normally. |
 | `.github/workflows/` | The CI lanes (see the next table). | — |
+| `renovate.json` | Renovate config for automated dependency updates. | Renovate (GitHub App) opens PRs bumping the pinned GitHub Actions and the `cgr-sync` image (`CGR_SYNC_IMAGE`) as new versions ship. |
 | `LICENSE` | Apache-2.0. | — |
 
 ### Workflows (`.github/workflows/`)
@@ -81,7 +82,8 @@ Either way the image lands in Artifact Registry via the pass-through mirror.
 | `custom-assembly.yaml` | PR/push on `custom-assembly/**` + manual | Merges `all.yaml` with each per-image overlay and applies it via `chainctl` so Chainguard builds + signs the custom image — `--dry-run` preview on PRs, real apply on merge to `main`. |
 | `validate.yml` | every PR + push to `main` | Lints the workflows and configs (`actionlint`, `yamllint`) and confirms `cgr-sync.yaml` / overlays parse. |
 | `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
-| `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
+
+Dependency updates (GitHub Actions + the `cgr-sync` image) are handled by **Renovate** (`renovate.json`), which replaced the previous digestabot workflow.
 
 ## Required secrets
 
