@@ -56,6 +56,19 @@ jobs:
           # Identity needs the repo.update permission for Custom Assembly builds.
           identity: ${{ secrets.CHAINGUARD_IDENTITY }}
 
+      # `apply --file` REPLACES a repo's whole config, so layer the shared
+      # overlay (custom-assembly/all.yaml — internal CA, locale, common env)
+      # with this image's specifics into one complete config. `*+` deep-merges
+      # maps and APPENDS arrays, so packages concatenate and per-image scalars
+      # win. yq is preinstalled on the GitHub-hosted runner.
+      - name: Merge shared overlay with ${{ matrix.repo }}
+        run: |
+          yq eval-all 'select(fi==0) *+ select(fi==1)' \
+            custom-assembly/all.yaml "${{ matrix.file }}" > "$RUNNER_TEMP/merged.yaml"
+          echo "::group::effective config for ${{ matrix.repo }}"
+          cat "$RUNNER_TEMP/merged.yaml"
+          echo "::endgroup::"
+
       # On PRs: preview only — non-zero exit if the live config would change.
       # Skip on fork PRs: secrets/OIDC aren't available there, so the assume
       # would fail anyway — and we never want to run authed steps for forks.
@@ -63,7 +76,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           chainctl images repos build apply \
-            --file "${{ matrix.file }}" \
+            --file "$RUNNER_TEMP/merged.yaml" \
             --parent "$PARENT" --repo "${{ matrix.repo }}" --dry-run
 
       # On main / manual dispatch: apply and trigger the build.
@@ -71,5 +84,5 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           chainctl images repos build apply \
-            --file "${{ matrix.file }}" \
+            --file "$RUNNER_TEMP/merged.yaml" \
             --parent "$PARENT" --repo "${{ matrix.repo }}" --yes

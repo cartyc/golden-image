@@ -87,7 +87,7 @@ _The docker-build "transform" lane (build → grype → sign → chps → incert
 
 Some customizations are better done **server-side** with [Chainguard Custom Assembly](https://edu.chainguard.dev/chainguard/chainguard-images/features/ca-docs/custom-assembly/): Chainguard assembles and signs the customized image for you, so there's no derived Dockerfile to maintain and the change is recorded in the image's provenance.
 
-`custom-assembly/python.yaml` (and `custom-assembly/jdk.yaml`) add `bash` and `curl` plus the internal CA to the python and jdk images — replacing the former docker-build pipelines (`python/Dockerfile.dev` and the distroless build). `.github/workflows/custom-assembly.yaml` applies every overlay in `custom-assembly/` (a matrix over the images): `--dry-run` on PRs (drift preview), `apply --yes` on merge.
+`custom-assembly/python.yaml` (and `custom-assembly/jdk.yaml`) hold each image's **specific** packages (`bash`, `curl`), while `custom-assembly/all.yaml` holds the customizations common to **every** custom image (the internal CA, French Canadian locale `glibc-locale-fr` + `LANG`). Since `chainctl … apply --file` replaces a repo's whole config, `.github/workflows/custom-assembly.yaml` **merges `all.yaml` with each per-image overlay** (`yq '… *+ …'` — append arrays, per-image scalars win) and applies the merged result (a matrix over the images): `--dry-run` on PRs (drift preview), `apply --yes` on merge. To customize all images at once, edit `all.yaml`; for one image, edit its file.
 
 ### Prerequisites
 
