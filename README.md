@@ -69,7 +69,6 @@ Either way the image lands in Artifact Registry via the pass-through mirror.
 | `custom-assembly/` | Chainguard **Custom Assembly** overlays — declarative, server-side image customizations (apko). | See the table rows below; the build workflow merges the base with each per-image overlay and applies the result. |
 | &nbsp;&nbsp;`custom-assembly/all.yaml` | The **base** overlay, merged into **every** custom image. | Put things that should apply everywhere here — common packages, env vars, annotations, and the internal CA. Edit this to change all custom images at once. |
 | &nbsp;&nbsp;`custom-assembly/<image>.yaml` | A **per-image** overlay (e.g. `python.yaml`, `jdk.yaml`). | Image-specific packages/config, layered on top of `all.yaml`. The filename maps to a target repo in the build workflow's matrix; to customize one image, edit its file. |
-| `python/cert.crt` | The internal CA certificate (PEM) bundled into custom images. | A self-signed **placeholder** ("Example Internal Root CA") — replace it with your org's real root CA, and keep it in sync with the inlined copy in `all.yaml`. |
 | `scripts/` | Helper scripts the CI calls (they both read `cgr-sync.yaml`). | `list-golden-images.py` → emits the verify targets for the post-mirror check; `list-source-refs.py` → emits source refs for the pre-merge existence check. Not run by hand normally. |
 | `.github/workflows/` | The CI lanes (see the next table). | — |
 | `LICENSE` | Apache-2.0. | — |
@@ -134,11 +133,11 @@ Before the `custom-assembly` workflow can run, complete these one-time setup ste
      --file custom-assembly/jdk.yaml    --save-as custom-jdk
    ```
 
-   The certs are read from the overlay's inline `certificates.additional` block; alternatively supply them from a PEM file with `--with-certificates=python/cert.crt`.
+   The certs are read from the overlay's inline `certificates.additional` block; alternatively supply them from a PEM file with `--with-certificates=<your-ca>.pem`.
 
 After bootstrapping, the workflow keeps each custom image in sync with its overlay on every merge to `main`.
 
-The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguard — so the **pass-through lane** mirrors it to Artifact Registry like any other image (it's already wired into `cgr-sync.yaml`, with a verify policy scoped to the Custom Assembly signing identity). It only mirrors once the bootstrap above has created the image. The overlay also bundles the internal CA from `python/cert.crt` into the system truststore (replacing incert).
+The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguard — so the **pass-through lane** mirrors it to Artifact Registry like any other image (it's already wired into `cgr-sync.yaml`, with a verify policy scoped to the Custom Assembly signing identity). It only mirrors once the bootstrap above has created the image. The overlay also bundles the internal CA (defined inline in `custom-assembly/all.yaml`) into the system truststore (replacing incert).
 
 ## Runbook — common tasks
 
@@ -176,7 +175,7 @@ Edit that image's `custom-assembly/<image>.yaml` (e.g. `python.yaml`). It's laye
 
 ### Rotate / replace the internal CA
 
-Replace **both** `python/cert.crt` and the inlined PEM in `custom-assembly/all.yaml` (keep them identical), open a PR, merge. The next `custom-assembly` apply rebuilds every image with the new CA.
+Replace the inlined PEM in `custom-assembly/all.yaml`, open a PR, merge. The next `custom-assembly` apply rebuilds every image with the new CA.
 
 ### Change the locale (or other base env/packages)
 
