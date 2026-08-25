@@ -19,8 +19,11 @@ _name() { awk -F':[[:space:]]*' '/^name:/ {v=$2; gsub(/["\x27]/,"",v); print v; 
 
 run() {  # log the command; execute only in apply mode
   printf '    $ %s\n' "$*"
+  # In apply mode, run the command and let its exit status propagate so a failed
+  # chainctl call (e.g. PermissionDenied) aborts the script under `set -e`
+  # instead of being silently reported as success. In plan mode nothing is
+  # executed and the function returns 0 (the `if` compound's status).
   if [ "$MODE" = "apply" ]; then "$@"; fi
-  return 0
 }
 
 echo "## Reconcile registry policies (mode=$MODE, org=$CHAINGUARD_ORG)"
