@@ -1,0 +1,35 @@
+# Chainguard custom container policy — gate PULLS from the org registry.
+# Denies any image whose main package has no FIPS-enabled build, unless the
+# binding explicitly opts out. Since policies COMPOSE (an image is allowed only
+# when EVERY active policy allows it), this becomes a hard "FIPS-only registry"
+# guardrail once bound in ENFORCE mode.
+#
+#   Validate:  chainctl policies custom validate --file registry-policies/fips-required.yaml
+#   Create:    chainctl policies custom create   --file registry-policies/fips-required.yaml --parent=$CHAINGUARD_ORG
+#   Stage:     chainctl policies enable --policy=fips-required --mode=DRY_RUN  --parent=$CHAINGUARD_ORG
+#   Enforce:   chainctl policies enable --policy=fips-required --mode=ENFORCE --parent=$CHAINGUARD_ORG
+name: fips-required
+description: Deny images whose main package has no FIPS-enabled build (opt-out via allow_non_fips).
+supported_resource_type: registry.chainguard.dev/Repo@v1
+expression_type: EXPRESSION_TYPE_REGO
+parameters:
+  - name: allow_non_fips
+    type: PARAMETER_TYPE_BOOLEAN
+    description: When true, also allow images whose main package has no FIPS build.
+    default: false
+expression: |
+  package chainguard.policies
+
+  import rego.v1
+
+  default allow := false
+
+  # Allowed when a FIPS-enabled build of the main package exists...
+  allow if {
+    input.main_package_version.fips
+  }
+
+  # ...or when the binding explicitly opts out of the FIPS requirement.
+  allow if {
+    input.parameters.allow_non_fips
+  }

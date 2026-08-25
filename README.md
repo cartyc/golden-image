@@ -61,6 +61,61 @@ Runs on a schedule (every 6h) plus manual dispatch (timer-driven — it does not
 
 Either way the image lands in Artifact Registry via the pass-through mirror.
 
+## Governance — managing & gating requests and releases
+
+The catalog above is *what* ships; this section is *how a change gets in*. The
+golden registry is run as a **governed service**: every request is reviewed and
+gated before promotion, and the registry itself enforces policy at pull time.
+
+### 1. Request
+A team opens a **Golden image request** issue (`.github/ISSUE_TEMPLATE/image-request.yml`)
+— image, pinned tag, lane, FIPS need, owner, justification. An approved request
+becomes a PR: a one-line `cgr-sync.yaml` entry, or a `custom-assembly/<image>.yaml`
+overlay if it needs customization.
+
+### 2. Gate (on the PR)
+- **CODEOWNERS** (`.github/CODEOWNERS`) — Platform Engineering must approve any
+  change to the catalog, overlays, or policies. Enforce with branch protection
+  ("Require review from Code Owners").
+- **Catalog gate** (`.github/workflows/catalog-gate.yml`) — two required checks:
+  - `conftest` (`policy/conftest/`) — the request is well-formed and within
+    policy: sources on `cgr.dev`, packages on the approved allowlist, HTTPS
+    runtime repos, signatures verified. Demo a denial:
+    `conftest test --policy policy/conftest policy/conftest/examples/disallowed-package.yaml`.
+  - `chainctl policies check` — the requested image passes the **registry's**
+    active pull policies; a `DENIED` fails the PR, so a non-compliant image is
+    never promoted.
+- **Validate** / **Validate catalog** — lint + the source-exists check.
+
+### 3. Registry pull policies (enforced by Chainguard, at pull time)
+Independently of CI, the org registry enforces **pull-time** policy — see
+[`registry-policies/`](registry-policies/README.md). Custom Rego policies here:
+`fips-required`, `min-version`. Recommended system policies: `no-eol`,
+`cooldown`, `support-window`. Stage in `DRY_RUN`, review
+`chainctl policies decision list`, then promote to `ENFORCE`. Exceptions are
+per-digest, attributable **overrides**.
+
+### 4. Release (recommended: gate the promotion)
+The mirror is timer/manual today. For a human **release gate**, run promotion
+through a protected GitHub **Environment** so an approver signs off before an
+image lands in the golden registry:
+
+```yaml
+# on the mirror/promote job — add required reviewers to this environment in repo settings
+environment: golden-prod
+```
+
+Pair with a **staging -> prod** promote (mirror to a `-staging` repo, verify,
+then gated promote to prod) for the canonical two-tier release control.
+
+### Demo flow
+1. Open an **image request** issue for `python:3.13 + bash,curl`.
+2. PR -> show a **policy failure** (add `nmap` -> conftest denies; or a non-FIPS
+   image -> `chainctl policies check` denies), fix it, get **CODEOWNERS** approval.
+3. Merge -> **environment-gated** promote into the golden registry.
+4. Payoff: a **Kyverno** admission policy in a demo cluster admits the golden,
+   signed image and rejects a non-golden one.
+
 ## Repository layout
 
 | Path | What it is | How you use it |
@@ -82,6 +137,8 @@ Either way the image lands in Artifact Registry via the pass-through mirror.
 | `validate.yml` | every PR + push to `main` | Lints the workflows and configs (`actionlint`, `yamllint`) and confirms `cgr-sync.yaml` / overlays parse. |
 | `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
 | `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
+| `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request: `conftest` policy check + `chainctl policies check` against the registry's active pull policies. |
+| `registry-policies.yml` | PR touching `registry-policies/**` | Validates the Chainguard custom pull-policy manifests (`chainctl policies custom validate`). |
 
 ## Required secrets
 
@@ -99,9 +156,10 @@ pass-through lane also pulls a pinned `cgr-sync` release image from GHCR
 
 ## To Do
 
-- Add FIPS image validation
-- Add application image validation
-- Expand the Custom Assembly and pass-through catalogs beyond Python
+- Gate promotion behind a protected `golden-prod` environment (see Governance -> Release)
+- Add a staging -> prod two-tier promote
+- Add a Kyverno/Gatekeeper admission example (only golden, signed images admitted)
+- Add application image validation; expand the catalogs beyond Python/JDK
 
 _The docker-build "transform" lane (build → grype → sign → chps → incert) was retired in favor of Custom Assembly, which builds and signs customized images server-side._
 

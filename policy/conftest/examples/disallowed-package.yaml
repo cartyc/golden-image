@@ -1,0 +1,7 @@
+# DEMO: a rejected Custom Assembly request — `nmap` is not on the allowlist.
+#   conftest test --policy policy/conftest policy/conftest/examples/disallowed-package.yaml
+# -> FAIL: package "nmap" is not in the approved allowlist
+contents:
+  packages:
+    - bash
+    - nmap

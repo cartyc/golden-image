@@ -1,0 +1,56 @@
+name: Golden image request
+description: Request a new image (or new tag) be added to the golden-image catalog.
+title: "[image request] <image>:<tag>"
+labels: ["image-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Platform Engineering reviews each request. Approved requests become a PR
+        to `cgr-sync.yaml` (pass-through) or a `custom-assembly/<image>.yaml`
+        overlay (if the image needs customization), which is then gated in CI.
+  - type: input
+    id: image
+    attributes:
+      label: Image (repository on cgr.dev)
+      placeholder: python
+    validations: { required: true }
+  - type: input
+    id: tags
+    attributes:
+      label: Tag(s)
+      description: Pin a version — avoid requesting only `latest`.
+      placeholder: "3.12, 3.13"
+    validations: { required: true }
+  - type: dropdown
+    id: lane
+    attributes:
+      label: Lane
+      options:
+        - Pass-through (ships unmodified)
+        - Custom Assembly (needs extra packages / certs / config)
+    validations: { required: true }
+  - type: textarea
+    id: customization
+    attributes:
+      label: Customization (Custom Assembly only)
+      description: Extra packages, certs, env, annotations. Packages must be on the approved allowlist (policy/conftest/catalog.rego).
+      placeholder: "packages: bash, curl"
+  - type: dropdown
+    id: fips
+    attributes:
+      label: FIPS required?
+      options: ["Yes — must have a -fips build", "No"]
+    validations: { required: true }
+  - type: input
+    id: owner
+    attributes:
+      label: Requesting team / owner
+      placeholder: team-payments
+    validations: { required: true }
+  - type: textarea
+    id: justification
+    attributes:
+      label: Justification
+      description: What needs it, and why this image/tag.
+    validations: { required: true }
