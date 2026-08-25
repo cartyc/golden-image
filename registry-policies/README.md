@@ -35,9 +35,11 @@ truth for the custom policies this repo manages:
   `delete` in the job summary. No changes.
 - **merge to `main` -> apply** — creates new policies, updates changed ones, and
   **prunes** any whose manifest was removed in the merge (diff-based, so policies
-  created outside this repo are never touched). The `registry-admin` approval gate
-  is currently disabled — a GitHub Environment changes the OIDC subject, which the
-  CI identity must trust first (see the note in the workflow to re-enable it).
+  created outside this repo are never touched). Gated by an approval-only `gate`
+  job on the `registry-admin` environment — `apply` runs after it but outside the
+  environment, so chainctl auth keeps its trusted OIDC subject. Add a required
+  reviewer to the environment (repo Settings -> Environments) to make the gate real.
+  It also prints a **policy-status snapshot** of the golden catalog on PRs.
 
 The action only manages policy **definitions**. **Enabling** a policy (binding it
 in `DRY_RUN` / `ENFORCE`) stays a deliberate manual step — see below — so merging
