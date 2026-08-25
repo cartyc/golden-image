@@ -1,0 +1,10 @@
+# Platform Engineering owns the golden-image catalog, the customization overlays,
+# and BOTH policy layers. A change to any of these requires their review
+# (enforce with branch protection: "Require review from Code Owners").
+# Replace @your-org/platform-engineering with your team handle.
+
+/cgr-sync.yaml                 @your-org/platform-engineering
+/custom-assembly/             @your-org/platform-engineering
+/registry-policies/          @your-org/platform-engineering
+/policy/                     @your-org/platform-engineering
+/.github/workflows/          @your-org/platform-engineering

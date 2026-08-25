@@ -1,0 +1,41 @@
+# Policies-as-code: validate the Chainguard custom pull-policy manifests in
+# registry-policies/ on every PR that touches them (parse + compile + parameter
+# schema check), so a broken Rego policy is caught in review, not at apply time.
+# Applying/enabling policies is a deliberate, gated admin action (see the README)
+# and is intentionally NOT automated here.
+name: Validate registry policies
+on:
+  pull_request:
+    paths: ["registry-policies/**"]
+  push:
+    branches: ["main"]
+    paths: ["registry-policies/**"]
+  workflow_dispatch: {}
+permissions: {}
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # setup-chainctl assumes the CI identity via OIDC
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Auth to Chainguard
+        uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
+        with:
+          identity: ${{ secrets.CHAINGUARD_IDENTITY }}
+      - name: Validate each custom policy manifest
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          fail=0
+          for f in registry-policies/*.yaml; do
+            echo "::group::validate $f"
+            if chainctl policies custom validate --file "$f"; then
+              echo "  OK: $f"
+            else
+              echo "::error file=$f::policy manifest failed validation"; fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $fail
