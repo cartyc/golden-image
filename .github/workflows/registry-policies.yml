@@ -1,41 +1,59 @@
-# Policies-as-code: validate the Chainguard custom pull-policy manifests in
-# registry-policies/ on every PR that touches them (parse + compile + parameter
-# schema check), so a broken Rego policy is caught in review, not at apply time.
-# Applying/enabling policies is a deliberate, gated admin action (see the README)
-# and is intentionally NOT automated here.
-name: Validate registry policies
+# Lifecycle for the Chainguard custom pull policies in registry-policies/.
+#   PR   -> plan: validate every manifest + preview create/update/delete (no changes).
+#   main -> apply: create/update present manifests, delete removed ones (prune),
+#           behind the `registry-admin` environment so an approver signs off.
+# The folder is the source of truth for the custom policies this repo manages;
+# prune is DIFF-BASED (only deletes manifests removed in the merge), so policies
+# created outside this repo are never touched.
+name: Registry policies
 on:
   pull_request:
-    paths: ["registry-policies/**"]
+    paths: ["registry-policies/**", "scripts/reconcile-registry-policies.sh"]
   push:
     branches: ["main"]
     paths: ["registry-policies/**"]
   workflow_dispatch: {}
 permissions: {}
 jobs:
-  validate:
+  plan:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # setup-chainctl assumes the CI identity via OIDC
+      id-token: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { fetch-depth: 0 }
       - name: Auth to Chainguard
         uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
         with:
           identity: ${{ secrets.CHAINGUARD_IDENTITY }}
-      - name: Validate each custom policy manifest
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          fail=0
-          for f in registry-policies/*.yaml; do
-            echo "::group::validate $f"
-            if chainctl policies custom validate --file "$f"; then
-              echo "  OK: $f"
-            else
-              echo "::error file=$f::policy manifest failed validation"; fail=1
-            fi
-            echo "::endgroup::"
-          done
-          exit $fail
+      - name: Plan (validate + preview create/update/delete)
+        env:
+          CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+          MODE: plan
+          PREV_SHA: ${{ github.event.pull_request.base.sha }}
+          CUR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/reconcile-registry-policies.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: registry-admin # add required reviewers on this environment to gate
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { fetch-depth: 0 }
+      - name: Auth to Chainguard
+        uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
+        with:
+          identity: ${{ secrets.CHAINGUARD_IDENTITY }}
+      - name: Apply (create/update + prune removed)
+        env:
+          CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+          MODE: apply
+          PREV_SHA: ${{ github.event.before }}
+          CUR_SHA: ${{ github.sha }}
+        run: bash scripts/reconcile-registry-policies.sh | tee -a "$GITHUB_STEP_SUMMARY"

@@ -26,6 +26,22 @@ allows it. A single ENFORCE-mode `DENIED` blocks the pull.
 | `fips-required.yaml` | Deny images whose main package has no FIPS build | `allow_non_fips` (bool, default `false`) |
 | `min-version.yaml` | Deny main-package versions below a semver floor | `floor` (string, default `0.0.0`) |
 
+## How these get applied (GitOps)
+
+`.github/workflows/registry-policies.yml` treats this folder as the source of
+truth for the custom policies this repo manages:
+
+- **PR -> plan** — validates every manifest and previews `create` / `update` /
+  `delete` in the job summary. No changes.
+- **merge to `main` -> apply** — creates new policies, updates changed ones, and
+  **prunes** any whose manifest was removed in the merge (diff-based, so policies
+  created outside this repo are never touched). Runs behind the `registry-admin`
+  environment — add a required reviewer there to gate it.
+
+The action only manages policy **definitions**. **Enabling** a policy (binding it
+in `DRY_RUN` / `ENFORCE`) stays a deliberate manual step — see below — so merging
+a manifest never starts blocking pulls on its own.
+
 ## Lifecycle (always stage in DRY_RUN first)
 
 ```sh

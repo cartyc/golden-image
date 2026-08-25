@@ -138,7 +138,7 @@ then gated promote to prod) for the canonical two-tier release control.
 | `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
 | `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
 | `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request: `conftest` policy check + `chainctl policies check` against the registry's active pull policies. |
-| `registry-policies.yml` | PR touching `registry-policies/**` | Validates the Chainguard custom pull-policy manifests (`chainctl policies custom validate`). |
+| `registry-policies.yml` | PR + merge on `registry-policies/**` | PR: validate + plan (preview create/update/delete). Merge: apply — create/update present manifests and prune removed ones, gated by the `registry-admin` environment. |
 
 ## Required secrets
 
