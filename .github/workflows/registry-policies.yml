@@ -1,9 +1,18 @@
 # Lifecycle for the Chainguard custom pull policies in registry-policies/.
-#   PR   -> plan: validate every manifest + preview create/update/delete (no changes).
-#   main -> apply: create/update present manifests, delete removed ones (prune),
-#           behind the `registry-admin` environment so an approver signs off.
-# The folder is the source of truth for the custom policies this repo manages;
-# prune is DIFF-BASED (only deletes manifests removed in the merge), so policies
+#   PR    -> plan:  validate manifests + preview create/update/delete, and show
+#            how today's catalog images fare against currently-enabled policies.
+#   main  -> gate + apply: an approver signs off (gate), then create/update present
+#            manifests and prune removed ones (apply).
+#
+# Approval gate design: the `registry-admin` environment sits on a tiny approval-
+# only `gate` job that requests NO OIDC token, so it never trips the identity's
+# subject check. `apply` depends on `gate` but runs OUTSIDE the environment, so
+# its OIDC subject stays repo:<owner>/<repo>:ref:refs/heads/main — the one the
+# Chainguard assumable identity already trusts. Add a required reviewer to the
+# `registry-admin` environment (repo Settings -> Environments) to make the gate
+# real; until then it passes through.
+#
+# Prune is DIFF-BASED (only deletes manifests removed in the merge), so policies
 # created outside this repo are never touched.
 name: Registry policies
 on:
@@ -35,18 +44,40 @@ jobs:
           PREV_SHA: ${{ github.event.pull_request.base.sha }}
           CUR_SHA: ${{ github.event.pull_request.head.sha }}
         run: bash scripts/reconcile-registry-policies.sh | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Policy status for the golden catalog (informational)
+        env:
+          CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+        run: |
+          {
+            echo "### Current policy status — golden catalog"
+            echo "_How today's catalog images fare against the **currently-enabled** policies_"
+            echo "_(a snapshot; newly-added policies here are not enabled until you bind them)._"
+            echo
+            while read -r ref; do
+              [ -z "$ref" ] && continue
+              if chainctl policies check "$ref" >/dev/null 2>&1; then
+                echo "- ALLOWED  \`$ref\`"
+              else
+                echo "- DENIED   \`$ref\`"
+              fi
+            done < <(python3 scripts/list-source-refs.py)
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  gate:
+    # Approval-only. Requests no OIDC token, so the environment's subject never
+    # reaches setup-chainctl. Add a required reviewer to `registry-admin` to gate.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: registry-admin
+    permissions: {}
+    steps:
+      - name: Awaiting approval
+        run: echo "Approved — proceeding to apply."
 
   apply:
     if: github.event_name != 'pull_request'
+    needs: gate
     runs-on: ubuntu-latest
-    # environment: registry-admin
-    # ^ Approval gate is DISABLED for now: a GitHub Environment changes the OIDC
-    #   token subject to repo:<owner>/<repo>:environment:registry-admin, which the
-    #   Chainguard assumable identity (CHAINGUARD_IDENTITY) does not trust yet, so
-    #   setup-chainctl fails with "invalid subject". To re-enable the gate:
-    #     1) add that subject to the identity's claim match, e.g. subject_pattern
-    #        repo:cartyc/golden-image:(ref:refs/heads/main|pull_request|environment:registry-admin)
-    #     2) uncomment the line above and add a required reviewer to the environment.
     permissions:
       contents: read
       id-token: write
