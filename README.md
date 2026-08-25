@@ -61,6 +61,20 @@ Runs on a schedule (every 6h) plus manual dispatch (timer-driven — it does not
 
 Either way the image lands in Artifact Registry via the pass-through mirror.
 
+## Policy status dashboard
+
+A GitHub Pages dashboard shows, at a glance, **what's enforcing vs dry-run**, a
+**golden-catalog enforcement matrix** (which policy allows/denies each image),
+**recent denials**, and **recent pipeline runs** (pass/fail). It refreshes on a
+schedule and whenever the mirror / policy workflows finish — so it reflects the
+current picture "as builds pass and fail."
+
+- Built by `.github/workflows/policy-dashboard.yml` from `scripts/policy-status.py`
+  (reads `chainctl policies binding list` / `check` / `decision list`, all read-only).
+- Preview the page locally: `python3 scripts/policy-status.py --mock && open site/index.html`.
+- **One-time setup:** repo **Settings → Pages → Source = GitHub Actions**. It then
+  publishes to `https://<owner>.github.io/golden-image/`.
+
 ## Governance — managing & gating requests and releases
 
 The catalog above is *what* ships; this section is *how a change gets in*. The

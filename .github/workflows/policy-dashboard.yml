@@ -1,0 +1,57 @@
+# Publishes the Policy Status dashboard to GitHub Pages: what's ENFORCE vs
+# DRY_RUN, the golden-catalog enforcement matrix, recent denials, and recent
+# pipeline runs. Refreshes on a schedule AND whenever the mirror / policy
+# workflows finish (workflow_run fires on success and failure alike).
+#
+# Split build/deploy on purpose: `build` runs chainctl and is NOT in an
+# environment, so its OIDC subject stays trusted; `deploy` uses the github-pages
+# environment (which changes the subject) but never touches chainctl.
+#
+# One-time setup: repo Settings -> Pages -> Source = GitHub Actions.
+name: Policy dashboard
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch: {}
+  workflow_run:
+    workflows: ["Passthrough mirror", "Registry policies", "Catalog gate"]
+    types: [completed]
+permissions: {}
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # setup-chainctl
+      actions: read     # gh api: recent workflow runs
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Auth to Chainguard
+        uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
+        with:
+          identity: ${{ secrets.CHAINGUARD_IDENTITY }}
+      - name: Generate dashboard
+        env:
+          CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          OUT: site/index.html
+        run: python3 scripts/policy-status.py
+      - uses: actions/upload-pages-artifact@v3 # digestabot will pin
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write   # pages deployment OIDC (not chainctl)
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4 # digestabot will pin
