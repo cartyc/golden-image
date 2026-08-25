@@ -34,6 +34,34 @@ def jline(cmd):
     except Exception:
         return None
 
+def items(data):
+    """chainctl -o json returns {items:[...], totalCount}; older/other commands
+    return a bare list. Normalise both (and None) to a list."""
+    if isinstance(data, dict):
+        return data.get("items") or []
+    return data or []
+
+# Strip chainctl enum prefixes: POLICY_MODE_DRY_RUN -> DRY_RUN,
+# POLICY_DECISION_RESULT_DENIED -> DENIED, etc. Falls back to the raw value.
+_ENUM_SUFFIXES = ("DRY_RUN", "ENFORCE", "DENIED", "ALLOWED", "ERROR")
+def norm(s):
+    s = (s or "").upper()
+    for suf in _ENUM_SUFFIXES:
+        if s.endswith(suf):
+            return suf
+    return s
+
+SYSTEM_POLICIES = {"no-eol", "cooldown", "support-window"}
+
+def policy_names():
+    """Map policy id -> human name (bindings reference the id, not the name)."""
+    data = jline(["chainctl","policies","list","--parent",ORG,"-o","json"])
+    m = {}
+    for p in items(data):
+        if isinstance(p, dict) and p.get("id"):
+            m[p["id"]] = p.get("name") or p["id"]
+    return m
+
 # ---- gather -----------------------------------------------------------------
 def get_bindings():
     if MOCK:
@@ -41,15 +69,21 @@ def get_bindings():
                 {"policy":"cooldown","type":"system","mode":"DRY_RUN","params":"days=7"},
                 {"policy":"fips-required","type":"custom","mode":"DRY_RUN","params":"allow_non_fips=false"},
                 {"policy":"min-version","type":"custom","mode":"ENFORCE","params":"floor=3.11.0"}]
+    names = policy_names()
     data = jline(["chainctl","policies","binding","list","--parent",ORG,"-o","json"])
     out=[]
-    for b in (data or []):
+    for b in items(data):
+        if not isinstance(b, dict):
+            continue
+        pid = b.get("policy") or ""
+        name = names.get(pid) or b.get("name") or (pid.split("/")[-1] if pid else "")
+        params = b.get("parameters") or b.get("params") or {}
         out.append({
-            "policy": b.get("policy") or b.get("name") or b.get("policyName",""),
-            "type": (b.get("type") or "").lower(),
-            "mode": (b.get("mode") or "").upper(),
-            "params": ", ".join(f"{k}={v}" for k,v in (b.get("parameters") or b.get("params") or {}).items())
-                       if isinstance(b.get("parameters") or b.get("params"), dict) else (b.get("parameters") or ""),
+            "policy": name,
+            "type": "system" if name in SYSTEM_POLICIES else "custom",
+            "mode": norm(b.get("mode")),
+            "params": ", ".join(f"{k}={v}" for k,v in params.items())
+                       if isinstance(params, dict) else str(params or ""),
         })
     return out
 
@@ -88,11 +122,17 @@ def get_recent_denials():
         return [{"repo":"custom-python","digest":"sha256:9f1c…","policy":"fips-required","mode":"DRY_RUN","result":"DENIED","date":"2026-08-24"},
                 {"repo":"nginx","digest":"sha256:4d5e…","policy":"cooldown","mode":"DRY_RUN","result":"DENIED","date":"2026-08-23"}]
     data = jline(["chainctl","policies","decision","list","--parent",ORG,"--result","DENIED","--since","7d","-o","json"])
+    names = policy_names()
     out=[]
-    for d in (data or [])[:50]:
-        out.append({"repo":d.get("repository",""),"digest":(d.get("digest","")[:19]+"…") if d.get("digest") else "",
-                    "policy":d.get("policy",""),"mode":d.get("mode",""),"result":d.get("result",""),
-                    "date":(d.get("pulledOn") or d.get("date") or "")[:10]})
+    for d in items(data)[:50]:
+        if not isinstance(d, dict):
+            continue
+        pol = d.get("policy","")
+        out.append({"repo":d.get("repository","") or d.get("repo",""),
+                    "digest":(d.get("digest","")[:19]+"…") if d.get("digest") else "",
+                    "policy":names.get(pol, pol.split("/")[-1] if "/" in pol else pol),
+                    "mode":norm(d.get("mode")),"result":norm(d.get("result")),
+                    "date":(d.get("pulledOn") or d.get("date") or d.get("createdAt") or "")[:10]})
     return out
 
 def get_runs():
