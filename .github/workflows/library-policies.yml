@@ -1,0 +1,95 @@
+# Lifecycle for the Chainguard Libraries policies in library-policies/.
+#   PR    -> plan:  preview create/update/delete + show current library bindings.
+#   main  -> gate + apply: an approver signs off (gate), then create/update present
+#            specs and prune removed ones (apply).
+#
+# Same approval-gate design as Registry policies: the `registry-admin` environment
+# sits on an approval-only `gate` job that requests NO OIDC token, so it never
+# trips the identity's subject check. `apply` depends on `gate` but runs OUTSIDE
+# the environment, so its OIDC subject stays repo:<owner>/<repo>:ref:refs/heads/main
+# — the subject the Chainguard assumable identity trusts.
+#
+# NOTE: the CI identity needs the libraries.policy.* capabilities
+# (create/update/delete/list + libraries.policy.binding.create). These are a
+# DIFFERENT capability namespace than the container policies.policy.* used by
+# Registry policies — grant them to the identity or apply will be denied.
+#
+# Prune is DIFF-BASED (only deletes specs removed in the merge), so policies
+# created outside this repo (e.g. an inherited cooldown) are never touched.
+name: Library policies
+on:
+  pull_request:
+    paths: ["library-policies/**", "scripts/reconcile-library-policies.py"]
+  push:
+    branches: ["main"]
+    paths: ["library-policies/**"]
+  workflow_dispatch: {}
+permissions: {}
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { fetch-depth: 0 }
+      - name: Auth to Chainguard
+        uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
+        with:
+          identity: ${{ secrets.CHAINGUARD_IDENTITY }}
+      - name: Plan (preview create/update/delete)
+        env:
+          CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+          MODE: plan
+          PREV_SHA: ${{ github.event.pull_request.base.sha }}
+          CUR_SHA: ${{ github.event.pull_request.head.sha }}
+        # pipefail so a reconcile failure isn't masked by tee's exit status.
+        run: |
+          set -o pipefail
+          python3 scripts/reconcile-library-policies.py | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Current library bindings (informational)
+        env:
+          CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+        run: |
+          {
+            echo "### Current Libraries policy bindings"
+            echo "_Active policies per ecosystem (PREVIEW records only; ENFORCE blocks pulls)._"
+            echo '```'
+            chainctl libraries policy binding list --parent "$CHAINGUARD_ORG" 2>/dev/null || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  gate:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: registry-admin
+    permissions: {}
+    steps:
+      - name: Awaiting approval
+        run: echo "Approved — proceeding to apply."
+
+  apply:
+    if: github.event_name != 'pull_request'
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { fetch-depth: 0 }
+      - name: Auth to Chainguard
+        uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
+        with:
+          identity: ${{ secrets.CHAINGUARD_IDENTITY }}
+      - name: Apply (create/update + prune removed)
+        env:
+          CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+          MODE: apply
+          PREV_SHA: ${{ github.event.before }}
+          CUR_SHA: ${{ github.sha }}
+        run: |
+          set -o pipefail
+          python3 scripts/reconcile-library-policies.py | tee -a "$GITHUB_STEP_SUMMARY"

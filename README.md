@@ -110,12 +110,22 @@ overlay if it needs customization.
 ### 3. Registry pull policies (enforced by Chainguard, at pull time)
 Independently of CI, the org registry enforces **pull-time** policy — see
 [`registry-policies/`](registry-policies/README.md). Custom Rego policies here:
-`fips-required`, `min-version`. Recommended system policies: `no-eol`,
+`fips-required`, `min-version`, `max-age`. Recommended system policies: `no-eol`,
 `cooldown`, `support-window`. Stage in `DRY_RUN`, review
 `chainctl policies decision list`, then promote to `ENFORCE`. Exceptions are
 per-digest, attributable **overrides**.
 
-### 4. Release (recommended: gate the promotion)
+### 4. Library pull policies (Chainguard Libraries — Java / npm / Python)
+The same request→gate→apply→observe→enforce pattern for **language
+dependencies** — see [`library-policies/`](library-policies/README.md). These
+are **declarative** (not Rego): Chainguard applies **cooldown + malware/greyware**
+gates automatically, and a policy here adds an explicit **blocklist** (by purl,
+optionally pinned to a bad `@version`) plus **justified allow exceptions**.
+Activated per ecosystem (`--ecosystem JAVA|JAVASCRIPT|PYTHON`) in `PREVIEW`,
+then `ENFORCE`. Reconciled by `scripts/reconcile-library-policies.py` via the
+**Library policies** workflow.
+
+### 5. Release (recommended: gate the promotion)
 The mirror is timer/manual today. For a human **release gate**, run promotion
 through a protected GitHub **Environment** so an approver signs off before an
 image lands in the golden registry:
@@ -159,6 +169,7 @@ then gated promote to prod) for the canonical two-tier release control.
 | `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
 | `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request: `conftest` policy check + `chainctl policies check` against the registry's active pull policies + `grype` CVE-count scan. |
 | `registry-policies.yml` | PR + merge on `registry-policies/**` | PR: validate + plan (preview create/update/delete). Merge: apply — create/update present manifests and prune removed ones, gated by the `registry-admin` environment. |
+| `library-policies.yml` | PR + merge on `library-policies/**` | PR: plan (preview create/update/delete) + current bindings. Merge: apply — create/update Libraries policies (cooldown + block/allow, per-ecosystem PREVIEW/ENFORCE) and prune removed ones, gated by the `registry-admin` environment. |
 
 ## Required secrets
 
