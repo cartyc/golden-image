@@ -91,7 +91,7 @@ overlay if it needs customization.
 - **CODEOWNERS** (`.github/CODEOWNERS`) — Platform Engineering must approve any
   change to the catalog, overlays, or policies. Enforce with branch protection
   ("Require review from Code Owners").
-- **Catalog gate** (`.github/workflows/catalog-gate.yml`) — two required checks:
+- **Catalog gate** (`.github/workflows/catalog-gate.yml`) — three required checks:
   - `conftest` (`policy/conftest/`) — the request is well-formed and within
     policy: sources on `cgr.dev`, packages on the approved allowlist, HTTPS
     runtime repos, signatures verified. Demo a denial:
@@ -99,6 +99,12 @@ overlay if it needs customization.
   - `chainctl policies check` — the requested image passes the **registry's**
     active pull policies; a `DENIED` fails the PR, so a non-compliant image is
     never promoted.
+  - `cve-scan` (`scripts/cve-gate.py`) — `grype` scans each requested image and
+    fails the PR if its Critical/High CVE counts exceed the thresholds
+    (`MAX_CRITICAL`/`MAX_HIGH`, default `0`/`0`; `MAX_MEDIUM` unlimited). Pull
+    policies can't see CVEs — their input is package lifecycle metadata only —
+    so this scanner step is the actual **CVE-count** gate. Tune the thresholds
+    in the workflow `env:` to your org's risk appetite.
 - **Validate** / **Validate catalog** — lint + the source-exists check.
 
 ### 3. Registry pull policies (enforced by Chainguard, at pull time)
@@ -151,7 +157,7 @@ then gated promote to prod) for the canonical two-tier release control.
 | `validate.yml` | every PR + push to `main` | Lints the workflows and configs (`actionlint`, `yamllint`) and confirms `cgr-sync.yaml` / overlays parse. |
 | `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
 | `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
-| `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request: `conftest` policy check + `chainctl policies check` against the registry's active pull policies. |
+| `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request: `conftest` policy check + `chainctl policies check` against the registry's active pull policies + `grype` CVE-count scan. |
 | `registry-policies.yml` | PR + merge on `registry-policies/**` | PR: validate + plan (preview create/update/delete). Merge: apply — create/update present manifests and prune removed ones, gated by the `registry-admin` environment. |
 
 ## Required secrets
