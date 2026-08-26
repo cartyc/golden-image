@@ -62,6 +62,23 @@ def policy_names():
             m[p["id"]] = p.get("name") or p["id"]
     return m
 
+def repo_names():
+    """Map repo id -> repo name (decisions reference repoId, not the name)."""
+    data = jline(["chainctl","images","repos","list","--parent",ORG,"-o","json"])
+    m = {}
+    for r in items(data):
+        if isinstance(r, dict) and r.get("id"):
+            m[r["id"]] = r.get("name") or r["id"]
+    return m
+
+def fmt_date(v):
+    """Decisions carry pulledOn as {year,month,day}; other commands use strings."""
+    if isinstance(v, dict) and v.get("year"):
+        return f'{v["year"]:04d}-{v.get("month",1):02d}-{v.get("day",1):02d}'
+    if isinstance(v, str):
+        return v[:10]
+    return ""
+
 # ---- gather -----------------------------------------------------------------
 def get_bindings():
     if MOCK:
@@ -122,17 +139,21 @@ def get_recent_denials():
         return [{"repo":"custom-python","digest":"sha256:9f1c…","policy":"fips-required","mode":"DRY_RUN","result":"DENIED","date":"2026-08-24"},
                 {"repo":"nginx","digest":"sha256:4d5e…","policy":"cooldown","mode":"DRY_RUN","result":"DENIED","date":"2026-08-23"}]
     data = jline(["chainctl","policies","decision","list","--parent",ORG,"--result","DENIED","--since","7d","-o","json"])
-    names = policy_names()
+    pnames = policy_names()
+    rnames = repo_names()
     out=[]
     for d in items(data)[:50]:
         if not isinstance(d, dict):
             continue
-        pol = d.get("policy","")
-        out.append({"repo":d.get("repository","") or d.get("repo",""),
-                    "digest":(d.get("digest","")[:19]+"…") if d.get("digest") else "",
-                    "policy":names.get(pol, pol.split("/")[-1] if "/" in pol else pol),
+        pol = d.get("policyId") or d.get("policy") or ""
+        repo = d.get("repoId") or d.get("repository") or d.get("repo") or ""
+        digest = d.get("digest") if isinstance(d.get("digest"), str) else ""
+        repo_name = rnames.get(repo) or (repo.split("/")[-1] if "/" in repo else repo)
+        out.append({"repo":repo_name,
+                    "digest":(digest[:19]+"…") if digest else "",
+                    "policy":d.get("policyName") or pnames.get(pol, pol.split("/")[-1] if "/" in pol else pol),
                     "mode":norm(d.get("mode")),"result":norm(d.get("result")),
-                    "date":(d.get("pulledOn") or d.get("date") or d.get("createdAt") or "")[:10]})
+                    "date":fmt_date(d.get("pulledOn") or d.get("date") or d.get("createdAt"))})
     return out
 
 def get_runs():
