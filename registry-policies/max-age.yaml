@@ -15,7 +15,7 @@ supported_resource_type: registry.chainguard.dev/Repo@v1
 expression_type: EXPRESSION_TYPE_REGO
 parameters:
   - name: max_age_days
-    type: PARAMETER_TYPE_NUMBER
+    type: PARAMETER_TYPE_INTEGER
     description: Maximum allowed age, in days, of the main package's release date.
     default: 30
 expression: |
