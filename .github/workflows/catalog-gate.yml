@@ -1,5 +1,5 @@
 # Gate on catalog change requests (PRs touching the pass-through catalog or the
-# Custom Assembly overlays). Two independent checks, both required by branch
+# Custom Assembly overlays). Three independent checks, all required by branch
 # protection:
 #   1. conftest — the catalog entry is well-formed and within policy
 #      (allowed source, pinned tags, package allowlist). Runs offline.
@@ -7,6 +7,10 @@
 #      active pull policies (fips-required / min-version / no-eol / ...). A
 #      DENIED here (even DRY_RUN) fails the PR, so a non-compliant image never
 #      gets promoted into the golden registry.
+#   3. cve-scan — grype scans each requested image and fails the PR if its
+#      Critical/High CVE counts exceed the thresholds. Pull policies can't see
+#      CVEs (their input is package lifecycle metadata only), so this scanner
+#      step is where the actual CVE-COUNT gate lives.
 name: Catalog gate
 on:
   pull_request:
@@ -62,3 +66,31 @@ jobs:
             echo "::endgroup::"
           done < <(python3 scripts/list-source-refs.py)
           exit $fail
+
+  cve-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # setup-chainctl configures the cgr.dev cred helper so grype can pull
+    env:
+      # Golden-catalog thresholds. Tune per org risk appetite; -1 = unlimited.
+      MAX_CRITICAL: "0"
+      MAX_HIGH: "0"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Auth to Chainguard
+        uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
+        with:
+          identity: ${{ secrets.CHAINGUARD_IDENTITY }}
+      - name: Install grype
+        run: |
+          ver=0.117.0
+          curl -sSfL "https://github.com/anchore/grype/releases/download/v${ver}/grype_${ver}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin grype
+      - name: Scan requested images against CVE thresholds
+        env:
+          CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+        run: |
+          set -euo pipefail
+          # Fully-qualified source refs -> grype -> fail if over Critical/High max.
+          python3 scripts/list-source-refs.py | python3 scripts/cve-gate.py
