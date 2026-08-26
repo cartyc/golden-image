@@ -13,6 +13,13 @@ on:
     - cron: "0 */6 * * *" # reconcile the catalog every 6h
   workflow_dispatch: {}
 
+# Serialize mirror runs — a manual run and a scheduled run (or an overrunning
+# previous run) must not race on the same Artifact Registry pushes. New runs
+# queue rather than cancel, so an in-flight mirror always finishes.
+concurrency:
+  group: passthrough-mirror
+  cancel-in-progress: false
+
 jobs:
   mirror:
     runs-on: ubuntu-latest

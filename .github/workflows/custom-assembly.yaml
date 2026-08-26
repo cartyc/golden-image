@@ -27,9 +27,20 @@ on:
     paths:
       - custom-assembly/**
       - .github/workflows/custom-assembly.yaml
+  schedule:
+    # Daily drift check — alert if a repo's live Custom Assembly config has
+    # drifted from the committed overlays (out-of-band edits via console/CLI).
+    - cron: "30 5 * * *"
   workflow_dispatch: {}
 
 permissions: {}
+
+# Serialize real applies: pushes/dispatch/schedule on main share the main-ref
+# group so an apply and a drift check can't run at once. PR runs are grouped per
+# ref and cancel their own superseded runs.
+concurrency:
+  group: custom-assembly-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   custom-assembly:
@@ -85,9 +96,19 @@ jobs:
             echo "::notice::${{ matrix.repo }}: merging this PR will update its live Custom Assembly config (diff above)"
           fi
 
+      # Scheduled: drift detection only — fail (don't apply) if the live config
+      # has drifted from the committed overlays. `apply --dry-run` exits non-zero
+      # when changes would apply, which is exactly the drift signal here.
+      - name: Drift check ${{ matrix.repo }} (scheduled)
+        if: github.event_name == 'schedule'
+        run: |
+          chainctl images repos build apply \
+            --file "$RUNNER_TEMP/merged.yaml" \
+            --parent "$PARENT" --repo "${{ matrix.repo }}" --dry-run
+
       # On main / manual dispatch: apply and trigger the build.
       - name: Apply ${{ matrix.repo }} and build
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: |
           chainctl images repos build apply \
             --file "$RUNNER_TEMP/merged.yaml" \
