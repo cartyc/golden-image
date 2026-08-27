@@ -1,0 +1,49 @@
+# Chainguard Libraries policy — declarative source of truth for the language
+# dependencies (Java / npm / Python) this org may pull from libraries.cgr.dev.
+#
+# Libraries policies are NOT Rego (unlike the container registry-policies/).
+# A policy configures automatic gates (cooldown + malware/greyware, applied by
+# Chainguard) plus explicit block / allow lists keyed by package URL (purl),
+# and is activated per ecosystem in PREVIEW or ENFORCE mode.
+#
+# This org already INHERITS a `default-7d-cooldown` policy enforced across all
+# three ecosystems, so cooldown + malware are already on. The value this policy
+# adds is an explicit BLOCKLIST (known-bad packages / compromised versions) and
+# justified ALLOW exceptions — the part a platform team owns and reviews.
+#
+# Reconciled by scripts/reconcile-library-policies.py (see library-policies/README.md).
+name: golden-libraries
+description: Org blocklist + justified exceptions layered on the inherited cooldown/malware gates.
+
+# Optional. 0 disables, 1-30 sets an explicit window, omit to inherit the
+# system default. Set stricter than the inherited 7d to demonstrate layering.
+cooldown_days: 14
+
+# Packages to always deny, by purl. Append @<version> to block one version and
+# leave the rest allowed. purl namespace selects the ecosystem:
+#   pkg:maven/<group>/<artifact>   pkg:npm/<name>   pkg:npm/%40<scope>/<name>   pkg:pypi/<name>
+# Replace these EXAMPLES with your real blocklist. Real-world sources to codify
+# here: packages compromised in the Sept 2025 npm attacks (chalk/debug family)
+# pinned to their bad versions, and internal names you never want pulled from
+# a public index (dependency-confusion defense).
+block:
+  - pkg:npm/left-pad                         # example — a package you don't want pulled
+  - pkg:npm/%40golden-internal/private-sdk   # example — internal-only name (dep-confusion)
+  - pkg:pypi/evil-demo-package               # example placeholder
+  - pkg:maven/com.example/bad-lib            # example placeholder
+  # - pkg:npm/chalk@<compromised-version>    # <- add real compromised versions here
+
+# Justified exceptions. Each entry may override the cooldown and/or malware gate.
+# override-malware REQUIRES a justification. Keep justifications comma-free.
+allow:
+  - purl: pkg:pypi/requests
+    override_cooldown: true
+    justification: "Vetted core dependency; approved by security review 2026-08-26."
+
+# Activate the policy per ecosystem. Start in PREVIEW (observe-only) — it records
+# what WOULD be blocked without denying pulls — then flip to ENFORCE once the
+# blocklist is reviewed. Modes: PREVIEW | ENFORCE.
+bindings:
+  - { ecosystem: JAVA,       mode: PREVIEW }
+  - { ecosystem: JAVASCRIPT, mode: PREVIEW }
+  - { ecosystem: PYTHON,     mode: PREVIEW }
