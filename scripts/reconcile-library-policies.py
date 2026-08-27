@@ -44,21 +44,42 @@ def capture(cmd):
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
+def create_or_update(create_cmd, update_cmd):
+    """Create the policy; if it already exists (a stale/empty list, or a
+    concurrent create), fall back to update so the run stays idempotent."""
+    print("    $ " + " ".join(create_cmd))
+    if MODE != "apply":
+        return
+    r = subprocess.run(create_cmd, capture_output=True, text=True)
+    sys.stdout.write(r.stdout)
+    if r.returncode == 0:
+        return
+    if "AlreadyExists" in (r.stderr + r.stdout):
+        print("  create reported AlreadyExists — updating instead")
+        run(update_cmd)
+        return
+    sys.stderr.write(r.stderr)
+    raise subprocess.CalledProcessError(r.returncode, create_cmd)
+
+
 def existing_policies():
-    """name -> id for Libraries policies OWNED BY this org (not inherited ones)."""
+    """Set of existing Libraries policy names in this org.
+
+    `list --parent ORG` is already org-scoped, so a returned name is one we can
+    address. We intentionally do NOT filter by an id/parent prefix: that format
+    varies across chainctl versions, and a mismatch there would make an existing
+    policy look new -> `create` -> AlreadyExists. We only ever act on names that
+    are in our own specs, so an inherited policy is never touched regardless.
+    """
     r = capture(["chainctl", "libraries", "policy", "list", "--parent", ORG, "-o", "json"])
     if r.returncode != 0:
-        return {}
+        return set()
     try:
         data = json.loads(r.stdout)
     except Exception:
-        return {}
+        return set()
     rows = data.get("items", []) if isinstance(data, dict) else (data or [])
-    out = {}
-    for p in rows:
-        if isinstance(p, dict) and p.get("name") and p.get("id", "").split("/")[0] == ORG:
-            out[p["name"]] = p["id"]
-    return out
+    return {p["name"] for p in rows if isinstance(p, dict) and p.get("name")}
 
 
 def allow_arg(a):
@@ -99,14 +120,16 @@ def reconcile():
                 sys.exit(f"{f}: invalid mode in {bd}")
 
         flags = spec_flags(spec)
+        update_cmd = ["chainctl", "libraries", "policy", "update", name, "--parent", ORG,
+                      "--replace-block", "--replace-allow"] + flags
+        create_cmd = ["chainctl", "libraries", "policy", "create", "--name", name,
+                      "--parent", ORG] + flags
         if name in existing:
             print(f"### update `{name}`  ({f})")
-            run(["chainctl", "libraries", "policy", "update", name, "--parent", ORG,
-                 "--replace-block", "--replace-allow"] + flags)
+            run(update_cmd)
         else:
             print(f"### create `{name}`  ({f})")
-            run(["chainctl", "libraries", "policy", "create", "--name", name,
-                 "--parent", ORG] + flags)
+            create_or_update(create_cmd, update_cmd)
 
         for bd in (spec.get("bindings") or []):
             print(f"- bind `{name}` -> {bd['ecosystem']} ({bd['mode']})")
