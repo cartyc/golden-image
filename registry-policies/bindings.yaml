@@ -1,0 +1,37 @@
+# Which pull policies are ENABLED on the org registry, and how — the source of
+# truth for policy *activation*, alongside the custom-policy manifests in this
+# folder. Applied by scripts/reconcile-bindings.py via the Registry policies
+# workflow (plan on PR, apply on merge). `chainctl policies enable` is
+# idempotent, so re-applying just reconciles mode/params.
+#
+#   - Custom policies (fips-required / min-version / max-age) are defined by the
+#     *.yaml manifests here; this file controls their binding + parameters.
+#   - System policies (no-eol / cooldown / support-window) have NO manifest —
+#     they're built in and enabled by name.
+#
+# Start everything in DRY_RUN (records what WOULD block); flip a policy to
+# ENFORCE here once its decisions look right.
+bindings:
+  - policy: fips-required
+    mode: DRY_RUN
+    params:
+      allow_non_fips: false
+
+  - policy: min-version
+    mode: DRY_RUN
+    params:
+      floor: "0.0.0"
+
+  # Bumped 30 -> 365: max-age keys on the version stream's RELEASE date (not the
+  # image rebuild date), so stable streams are "old" by design. 30 days flagged
+  # essentially the whole catalog; a year is a looser "stale version" backstop.
+  # no-eol (below) is the real end-of-life control.
+  - policy: max-age
+    mode: DRY_RUN
+    params:
+      max_age_days: 365
+
+  # System policy: deny versions past their end-of-life date. This is the
+  # signal we actually want for abandonment — keyed off the real EOL date.
+  - policy: no-eol
+    mode: DRY_RUN

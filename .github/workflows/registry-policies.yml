@@ -66,6 +66,13 @@ jobs:
               fi
             done < <(python3 scripts/list-source-refs.py)
           } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Plan bindings (preview enable)
+        env:
+          CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+          MODE: plan
+        run: |
+          set -o pipefail
+          python3 scripts/reconcile-bindings.py | tee -a "$GITHUB_STEP_SUMMARY"
 
   gate:
     # Approval-only. Requests no OIDC token, so the environment's subject never
@@ -102,3 +109,10 @@ jobs:
         run: |
           set -o pipefail
           bash scripts/reconcile-registry-policies.sh | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Apply bindings (enable)
+        env:
+          CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+          MODE: apply
+        run: |
+          set -o pipefail
+          python3 scripts/reconcile-bindings.py | tee -a "$GITHUB_STEP_SUMMARY"
