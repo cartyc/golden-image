@@ -81,11 +81,20 @@ The catalog above is *what* ships; this section is *how a change gets in*. The
 golden registry is run as a **governed service**: every request is reviewed and
 gated before promotion, and the registry itself enforces policy at pull time.
 
-### 1. Request
+### 1. Request → auto-PR
 A team opens a **Golden image request** issue (`.github/ISSUE_TEMPLATE/image-request.yml`)
-— image, pinned tag, lane, FIPS need, owner, justification. An approved request
-becomes a PR: a one-line `cgr-sync.yaml` entry, or a `custom-assembly/<image>.yaml`
-overlay if it needs customization.
+— image, pinned tag, lane, FIPS need, owner, justification. Platform Engineering
+reviews and adds the **`approved`** label; the **Image request intake** workflow
+(`.github/workflows/image-request-intake.yml`) then parses the form, appends the
+`cgr-sync.yaml` entry (and, for the Custom Assembly lane, scaffolds a
+`custom-assembly/<image>.yaml` overlay stub), opens the PR `Closes`-ing the
+issue, and comments the PR link back — so **no one hand-edits YAML**. Prefer to
+author the PR yourself? `scripts/add-catalog-entry.py --name <repo> --tags <t1,t2>`
+appends a valid entry the same way.
+
+> One-time setup: create an `approved` label, and (optional) set an `INTAKE_PAT`
+> secret so the bot-opened PR triggers Catalog gate immediately (a PR opened with
+> the default `GITHUB_TOKEN` doesn't trigger other workflows).
 
 ### 2. Gate (on the PR)
 - **CODEOWNERS** (`.github/CODEOWNERS`) — Platform Engineering must approve any
@@ -105,6 +114,9 @@ overlay if it needs customization.
     policies can't see CVEs — their input is package lifecycle metadata only —
     so this scanner step is the actual **CVE-count** gate. Tune the thresholds
     in the workflow `env:` to your org's risk appetite.
+- **Gate summary** — the Catalog gate posts a single **sticky PR comment**
+  showing pass/fail for all three checks, so the requester sees what to fix
+  without reading job logs (auto-updated on each push).
 - **Validate** / **Validate catalog** — lint + the source-exists check.
 
 ### 3. Registry pull policies (enforced by Chainguard, at pull time)
@@ -167,7 +179,8 @@ then gated promote to prod) for the canonical two-tier release control.
 | `validate.yml` | every PR + push to `main` | Lints the workflows and configs (`actionlint`, `yamllint`) and confirms `cgr-sync.yaml` / overlays parse. |
 | `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
 | `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
-| `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request: `conftest` policy check + `chainctl policies check` against the registry's active pull policies + `grype` CVE-count scan. |
+| `image-request-intake.yml` | issue labeled `approved` | Turns an approved **image-request** issue into a ready-to-review PR: parses the form, appends the `cgr-sync.yaml` entry (+ scaffolds a `custom-assembly/<image>.yaml` stub for the Custom Assembly lane), opens the PR, and comments the link on the issue. |
+| `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request: `conftest` policy check + `chainctl policies check` against the registry's active pull policies + `grype` CVE-count scan, then posts a sticky **gate-summary** comment. |
 | `registry-policies.yml` | PR + merge on `registry-policies/**` | PR: validate + plan (preview create/update/delete). Merge: apply — create/update present manifests and prune removed ones, gated by the `registry-admin` environment. |
 | `library-policies.yml` | PR + merge on `library-policies/**` | PR: plan (preview create/update/delete) + current bindings. Merge: apply — create/update Libraries policies (cooldown + block/allow, per-ecosystem PREVIEW/ENFORCE) and prune removed ones, gated by the `registry-admin` environment. |
 
