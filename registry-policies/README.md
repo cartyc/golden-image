@@ -41,9 +41,14 @@ truth for the custom policies this repo manages:
   reviewer to the environment (repo Settings -> Environments) to make the gate real.
   It also prints a **policy-status snapshot** of the golden catalog on PRs.
 
-The action only manages policy **definitions**. **Enabling** a policy (binding it
-in `DRY_RUN` / `ENFORCE`) stays a deliberate manual step — see below — so merging
-a manifest never starts blocking pulls on its own.
+Two things are codified here and both are applied by the workflow on merge:
+- **Definitions** — the custom-policy `*.yaml` manifests (reconciled by
+  `scripts/reconcile-registry-policies.sh`).
+- **Bindings** — `bindings.yaml` declares which policies are *enabled*, their
+  mode (`DRY_RUN`/`ENFORCE`), and parameters, including **system** policies like
+  `no-eol` (reconciled by `scripts/reconcile-bindings.py`). Because everything
+  starts in `DRY_RUN`, merging never starts blocking pulls on its own — flipping
+  a binding to `ENFORCE` in `bindings.yaml` is the deliberate, reviewed step.
 
 ## Lifecycle (always stage in DRY_RUN first)
 
