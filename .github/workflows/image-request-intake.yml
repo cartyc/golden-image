@@ -1,0 +1,127 @@
+# Image-request intake: turn an APPROVED request issue into a ready-to-review
+# catalog PR, so requesters never hand-edit YAML and reviewers never transcribe
+# an issue by hand.
+#
+# Flow: a requester files the "Golden image request" issue form. A Platform
+# Engineer reviews and adds the `approved` label. This workflow then parses the
+# form, appends the cgr-sync.yaml entry (and, for the Custom Assembly lane,
+# scaffolds a custom-assembly/<image>.yaml overlay stub), opens a PR that
+# `Closes` the issue, and comments the PR link back on the issue. The normal
+# Catalog gate + CODEOWNERS review still apply to that PR.
+#
+# NOTE: a PR opened with the default GITHUB_TOKEN does NOT trigger other
+# workflows (GitHub's recursion guard), so Catalog gate won't auto-run on the
+# bot PR. Set an `INTAKE_PAT` secret (fine-grained PAT: contents + pull-requests
+# write) and this workflow uses it, so the gates run immediately. Without it the
+# PR is still opened; the gates run on the first human push/label.
+name: Image request intake
+on:
+  issues:
+    types: [labeled]
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+jobs:
+  intake:
+    # Only when the `approved` label is added to an `image-request` issue.
+    if: >-
+      github.event.label.name == 'approved' &&
+      contains(github.event.issue.labels.*.name, 'image-request')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Parse the request
+        id: parse
+        env:
+          GITHUB_ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          python3 scripts/parse-image-request.py > req.json
+          echo "Parsed request:"; cat req.json
+
+      - name: Apply the catalog change
+        id: change
+        run: |
+          set -euo pipefail
+          name=$(jq -r .repo_name req.json)
+          image=$(jq -r .image req.json)
+          tags=$(jq -r '.tags | join(",")' req.json)
+          is_custom=$(jq -r .is_custom req.json)
+
+          python3 scripts/add-catalog-entry.py --name "$name" --tags "$tags"
+
+          # Custom Assembly lane: scaffold an overlay stub if one doesn't exist.
+          overlay="custom-assembly/${image}.yaml"
+          if [ "$is_custom" = "true" ] && [ ! -f "$overlay" ]; then
+            python3 scripts/scaffold-overlay.py --out "$overlay" --req req.json
+          fi
+
+          # nothing changed? (idempotent re-approve) — stop cleanly
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open the catalog PR
+        if: steps.change.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.INTAKE_PAT || secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          name=$(jq -r .repo_name req.json)
+          tags=$(jq -r '.tags | join(", ")' req.json)
+          lane=$(jq -r 'if .is_custom then "Custom Assembly" else "Pass-through" end' req.json)
+          owner=$(jq -r .owner req.json)
+          fips=$(jq -r 'if .fips_required then "Yes" else "No" end' req.json)
+          branch="intake/issue-${ISSUE}"
+
+          git config user.name "golden-image-intake[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          rm -f req.json
+          git add -A
+          git commit -m "intake: add ${name} (${tags}) from image request #${ISSUE}
+
+          Requested by ${owner}. Lane: ${lane}. FIPS: ${fips}.
+          Closes #${ISSUE}."
+          git push -u origin "$branch"
+
+          body=$(cat <<EOF
+          Automated from image request #${ISSUE}.
+
+          | Field | Value |
+          |---|---|
+          | Repo (in \`cgr-sync.yaml\`) | \`${name}\` |
+          | Tags | ${tags} |
+          | Lane | ${lane} |
+          | FIPS required | ${fips} |
+          | Requesting team | ${owner} |
+
+          Closes #${ISSUE}
+
+          ## Reviewer checklist (Platform Engineering)
+          - [ ] Tag(s) pinned (not only \`latest\`)
+          - [ ] Custom Assembly overlay (if any) completed + packages on the allowlist
+          - [ ] FIPS requirement satisfied
+          - [ ] **Catalog gate** green (conftest + policies check + CVE scan)
+
+          > Opened by the intake bot. If Catalog gate did not run, set the \`INTAKE_PAT\` secret (see the workflow header).
+          EOF
+          )
+          pr_url=$(gh pr create --base main --head "$branch" \
+            --title "intake: ${name} (${tags}) — request #${ISSUE}" \
+            --body "$body")
+          echo "PR: $pr_url"
+          gh issue comment "$ISSUE" --body "✅ Approved — opened catalog PR: ${pr_url}. Platform Engineering will review the gate results there."
+
+      - name: Nothing to change
+        if: steps.change.outputs.changed != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE" --body "ℹ️ Approved, but the catalog already contains this image + tags — no PR needed."

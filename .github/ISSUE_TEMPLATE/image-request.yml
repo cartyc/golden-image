@@ -6,9 +6,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        Platform Engineering reviews each request. Approved requests become a PR
-        to `cgr-sync.yaml` (pass-through) or a `custom-assembly/<image>.yaml`
-        overlay (if the image needs customization), which is then gated in CI.
+        Platform Engineering reviews each request. When an approver adds the
+        **`approved`** label, automation opens a catalog PR for you — a
+        `cgr-sync.yaml` entry (pass-through) or a `custom-assembly/<image>.yaml`
+        overlay stub (Custom Assembly) — which is then gated in CI. You don't
+        edit any YAML; just fill in the fields below.
   - type: input
     id: image
     attributes:

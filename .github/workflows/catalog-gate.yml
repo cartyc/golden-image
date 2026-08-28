@@ -94,3 +94,55 @@ jobs:
           set -euo pipefail
           # Fully-qualified source refs -> grype -> fail if over Critical/High max.
           python3 scripts/list-source-refs.py | python3 scripts/cve-gate.py
+
+  # Consolidated, human-friendly gate feedback as a sticky PR comment — so a
+  # requester sees pass/fail for all three checks in one place without digging
+  # through job logs. Runs after the gates regardless of their outcome.
+  summary:
+    needs: [conftest, policies-check, cve-scan]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Upsert gate-results comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          C: ${{ needs.conftest.result }}
+          P: ${{ needs.policies-check.result }}
+          V: ${{ needs.cve-scan.result }}
+        run: |
+          set -euo pipefail
+          icon() { case "$1" in
+            success) echo "✅ pass";; failure) echo "❌ fail";;
+            skipped) echo "⏭️ skipped";; cancelled) echo "🚫 cancelled";;
+            *) echo "⚠️ $1";; esac; }
+          marker="<!-- catalog-gate-summary -->"
+          overall="✅ ready for review"
+          if [ "$C" = "failure" ] || [ "$P" = "failure" ] || [ "$V" = "failure" ]; then
+            overall="❌ changes needed — see the failing check(s)"
+          fi
+          body=$(cat <<EOF
+          ${marker}
+          ## Catalog gate — ${overall}
+
+          | Check | Result | What it verifies |
+          |---|---|---|
+          | conftest | $(icon "$C") | well-formed entry · source on cgr.dev · pinned tag · package allowlist · signature |
+          | policies check | $(icon "$P") | passes the registry's active pull policies (fips / min-version / max-age / no-eol) |
+          | cve-scan | $(icon "$V") | grype Critical/High counts within threshold |
+
+          _Auto-updated by Catalog gate on each push._
+          EOF
+          )
+          # find an existing summary comment (by marker) and edit it, else create.
+          cid=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+                  --jq "map(select(.body|contains(\"${marker}\")))|.[0].id // empty")
+          if [ -n "$cid" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${cid}" -f body="$body" >/dev/null
+            echo "updated comment $cid"
+          else
+            gh pr comment "$PR" --repo "$REPO" --body "$body"
+          fi
