@@ -2,10 +2,15 @@
 # registry so end-of-support majors can't be pulled/promoted. Uses semver to
 # compare the main package's version stream against a per-binding floor.
 #
+# Non-semver version streams (e.g. `latest`, `openjdk-21`, date-based tags)
+# CAN'T be floor-compared, so this policy does not block them — it only denies a
+# valid semver that is actually below the floor. (Without this, every non-semver
+# tag was denied, which false-flagged the JDK/JRE images.)
+#
 #   chainctl policies enable --policy=min-version --mode=ENFORCE \
 #     --param=floor=3.11.0 --parent=$CHAINGUARD_ORG
 name: min-version
-description: Deny images whose main package version is below the configured semver floor.
+description: Deny images whose main package is a valid semver below the configured floor (non-semver versions are not blocked).
 supported_resource_type: registry.chainguard.dev/Repo@v1
 expression_type: EXPRESSION_TYPE_REGO
 parameters:
@@ -20,7 +25,14 @@ expression: |
 
   default allow := false
 
+  # A valid semver at or above the floor passes.
   allow if {
     semver.is_valid(input.main_package_version.version)
     semver.compare(input.main_package_version.version, input.parameters.floor) >= 0
+  }
+
+  # A non-semver version stream (latest / openjdk-21 / date tags) can't be
+  # floor-compared, so this policy doesn't block it — other policies still apply.
+  allow if {
+    not semver.is_valid(input.main_package_version.version)
   }
