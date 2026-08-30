@@ -18,6 +18,11 @@ import sys
 BAD = {"DENIED", "ERROR"}
 
 
+def short(ref):
+    """Display form of a ref: drop the cgr.dev/<org> prefix, keep repo:tag."""
+    return ref.split("/", 2)[-1]
+
+
 def parse_rows(stdout):
     """Parse the check table into [{policy, mode, result}]."""
     rows = []
@@ -46,18 +51,18 @@ def main():
         rows = parse_rows(r.stdout)
         if not rows:
             msg = (r.stderr or r.stdout).strip().splitlines()
-            print(f"::warning::could not evaluate policies for {ref}: {msg[-1] if msg else '(no output)'}")
+            print(f"::warning::could not evaluate policies for {short(ref)}: {msg[-1] if msg else '(no output)'}")
             continue
         enforce, dryrun = classify(rows)
         if enforce:
             hard_fail = 1
-            print(f"::error::ENFORCE policy denied {ref}: "
+            print(f"::error::ENFORCE policy denied {short(ref)}: "
                   + ", ".join(f'{r["policy"]}={r["result"]}' for r in enforce))
         if dryrun:
-            print(f"::warning::DRY_RUN policy would deny {ref} (observe-only, not blocking): "
+            print(f"::warning::DRY_RUN policy would deny {short(ref)} (observe-only, not blocking): "
                   + ", ".join(r["policy"] for r in dryrun))
         if not enforce and not dryrun:
-            print(f"✓ {ref} — all policies allow")
+            print(f"✓ {short(ref)} — all policies allow")
     if hard_fail:
         print("::error::one or more images denied by an ENFORCE policy")
     else:
