@@ -59,6 +59,6 @@ repositories:
 
   - name: nginx
     tags:
-      list: ["1.27"]
+      list: ["1.30"]
 
 # reviewed by platform-eng (intake demo)
