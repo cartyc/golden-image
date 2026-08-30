@@ -74,6 +74,12 @@ def main():
 
     is_custom = fields["lane"].lower().startswith("custom")
     fields["tags"] = normalize_tags(fields["tags"])
+    # tags come from an untrusted issue form — enforce the Docker tag charset so
+    # nothing odd (quotes, shell/YAML metacharacters) reaches the catalog or PR.
+    bad_tags = [t for t in fields["tags"] if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}", t)]
+    if bad_tags:
+        print(f"::error::invalid tag(s): {bad_tags}", file=sys.stderr)
+        return 2
     fields["is_custom"] = is_custom
     # pass-through mirrors under the image name; custom-assembly under custom-<image>
     fields["repo_name"] = f"custom-{image}" if is_custom else image

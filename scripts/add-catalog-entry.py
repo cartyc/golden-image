@@ -87,6 +87,10 @@ def main():
     if not re.fullmatch(r"[a-z0-9]([a-z0-9._-]*[a-z0-9])?", name):
         print(f"::error::invalid repository name '{name}'", file=sys.stderr)
         return 2
+    bad = [t for t in tags if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}", t)]
+    if bad:
+        print(f"::error::invalid tag(s) {bad} — allowed: [A-Za-z0-9._-]", file=sys.stderr)
+        return 2
 
     text = open(args.file).read()
     current = existing_repo_tags(text, name)
