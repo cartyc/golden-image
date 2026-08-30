@@ -81,6 +81,29 @@ The catalog above is *what* ships; this section is *how a change gets in*. The
 golden registry is run as a **governed service**: every request is reviewed and
 gated before promotion, and the registry itself enforces policy at pull time.
 
+```mermaid
+flowchart TD
+  issue(["Requester opens<br/>image-request issue"])
+  review{"Platform Eng<br/>reviews"}
+  intake["<b>Image request intake</b><br/>parse form, append cgr-sync.yaml<br/>+ scaffold Custom Assembly overlay,<br/>open PR (Closes #issue), comment link"]
+  gate{"<b>Catalog gate</b> (scoped to changed refs)<br/>conftest, policies-check, cve-scan"}
+  feedback[/"sticky PR comments:<br/>gate summary + CVE details"/]
+  remediate["Requester remediates<br/>(e.g. bump the version)"]
+  codeowners{"CODEOWNERS<br/>approve"}
+  merge(["merge to main"])
+  mirror[("passthrough-mirror, every 6h:<br/>verify, mirror to Artifact Registry")]
+
+  issue --> review
+  review -- "adds approved label" --> intake --> gate
+  gate -. posts .-> feedback
+  gate -- "fail: ENFORCE denial or CVE breach" --> remediate --> gate
+  gate -- pass --> codeowners --> merge --> mirror
+  review -- "changes requested" --> issue
+```
+
+> DRY_RUN policy denials show as **warnings** in the gate (they don't block);
+> only **ENFORCE** denials and CVE-threshold breaches fail the PR.
+
 ### 1. Request → auto-PR
 A team opens a **Golden image request** issue (`.github/ISSUE_TEMPLATE/image-request.yml`)
 — image, pinned tag, lane, FIPS need, owner, justification. Platform Engineering
