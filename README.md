@@ -105,27 +105,39 @@ appends a valid entry the same way.
     policy: sources on `cgr.dev`, packages on the approved allowlist, HTTPS
     runtime repos, signatures verified. Demo a denial:
     `conftest test --policy policy/conftest policy/conftest/examples/disallowed-package.yaml`.
-  - `chainctl policies check` — the requested image passes the **registry's**
-    active pull policies; a `DENIED` fails the PR, so a non-compliant image is
-    never promoted.
-  - `cve-scan` (`scripts/cve-gate.py`) — `grype` scans each requested image and
-    fails the PR if its Critical/High CVE counts exceed the thresholds
+  - `chainctl policies check` (`scripts/check-policies.py`) — the image passes
+    the **registry's** active pull policies. An **ENFORCE** denial fails the PR
+    (a non-compliant image is never promoted); a **DRY_RUN** denial is a
+    *warning* only, so observe-mode policies inform the reviewer without
+    blocking.
+  - `cve-scan` (`scripts/cve-gate.py`) — `grype` scans the image and fails the
+    PR if its Critical/High CVE counts exceed the thresholds
     (`MAX_CRITICAL`/`MAX_HIGH`, default `0`/`0`; `MAX_MEDIUM` unlimited). Pull
     policies can't see CVEs — their input is package lifecycle metadata only —
     so this scanner step is the actual **CVE-count** gate. Tune the thresholds
-    in the workflow `env:` to your org's risk appetite.
-- **Gate summary** — the Catalog gate posts a single **sticky PR comment**
-  showing pass/fail for all three checks, so the requester sees what to fix
-  without reading job logs (auto-updated on each push).
+    in the workflow `env:`.
+  - Both checks are **scoped to the refs the PR changed** (`scripts/changed-refs.py`),
+    so a request is judged on its own change, not the whole catalog's
+    pre-existing state. Whole-catalog coverage still runs via the scheduled
+    **passthrough-mirror** verify job and a manual **Catalog gate** dispatch
+    (which scan everything).
+- **Gate feedback (sticky PR comments)** — the Catalog gate posts a **summary**
+  comment (pass/fail for all three checks) and, when `cve-scan` fails, an
+  itemized **CVE-details** comment (offending CVE · package · installed ·
+  fixed-in) so the requester sees exactly what to fix without reading job logs.
+  Both auto-update on each push.
 - **Validate** / **Validate catalog** — lint + the source-exists check.
 
 ### 3. Registry pull policies (enforced by Chainguard, at pull time)
 Independently of CI, the org registry enforces **pull-time** policy — see
 [`registry-policies/`](registry-policies/README.md). Custom Rego policies here:
-`fips-required`, `min-version`, `max-age`. Recommended system policies: `no-eol`,
-`cooldown`, `support-window`. Stage in `DRY_RUN`, review
-`chainctl policies decision list`, then promote to `ENFORCE`. Exceptions are
-per-digest, attributable **overrides**.
+`fips-required`, `min-version`, `max-age`; plus system policies (`no-eol`,
+`cooldown`, `support-window`). Both the definitions *and their activation* are
+codified: `registry-policies/bindings.yaml` declares which policies are enabled,
+their mode (`DRY_RUN`/`ENFORCE`) and parameters (reconciled by
+`scripts/reconcile-bindings.py`). Everything starts in `DRY_RUN`; review
+`chainctl policies decision list`, then flip a binding to `ENFORCE` in
+`bindings.yaml`. Exceptions are per-digest, attributable **overrides**.
 
 ### 4. Library pull policies (Chainguard Libraries — Java / npm / Python)
 The same request→gate→apply→observe→enforce pattern for **language
@@ -166,7 +178,7 @@ then gated promote to prod) for the canonical two-tier release control.
 | `custom-assembly/` | Chainguard **Custom Assembly** overlays — declarative, server-side image customizations (apko). | See the table rows below; the build workflow merges the base with each per-image overlay and applies the result. |
 | &nbsp;&nbsp;`custom-assembly/all.yaml` | The **base** overlay, merged into **every** custom image. | Put things that should apply everywhere here — common packages, env vars, annotations, and the internal CA. Edit this to change all custom images at once. |
 | &nbsp;&nbsp;`custom-assembly/<image>.yaml` | A **per-image** overlay (e.g. `python.yaml`, `jdk.yaml`). | Image-specific packages/config, layered on top of `all.yaml`. The filename maps to a target repo in the build workflow's matrix; to customize one image, edit its file. |
-| `scripts/` | Helper scripts the CI calls (they both read `cgr-sync.yaml`). | `list-golden-images.py` → emits the verify targets for the post-mirror check; `list-source-refs.py` → emits source refs for the pre-merge existence check. Not run by hand normally. |
+| `scripts/` | Helper scripts the CI calls (not run by hand normally). | **Catalog refs:** `list-source-refs.py` (source refs for the existence check), `list-golden-images.py` (post-mirror verify targets), `changed-refs.py` (only the refs a PR changed). **Intake:** `parse-image-request.py` (issue form → fields), `add-catalog-entry.py` (the single catalog-entry writer), `scaffold-overlay.py` (Custom Assembly stub). **Gate:** `check-policies.py` (pull-policy check; ENFORCE fails, DRY_RUN warns), `cve-gate.py` (grype CVE-count gate + PR-comment report). **Policies:** `reconcile-registry-policies.sh` (custom-policy definitions), `reconcile-bindings.py` (policy activation), `reconcile-library-policies.py` (Libraries policies). **Dashboard:** `policy-status.py` (GitHub Pages status page). |
 | `.github/workflows/` | The CI lanes (see the next table). | — |
 | `LICENSE` | Apache-2.0. | — |
 
@@ -180,8 +192,8 @@ then gated promote to prod) for the canonical two-tier release control.
 | `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
 | `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
 | `image-request-intake.yml` | issue labeled `approved` | Turns an approved **image-request** issue into a ready-to-review PR: parses the form, appends the `cgr-sync.yaml` entry (+ scaffolds a `custom-assembly/<image>.yaml` stub for the Custom Assembly lane), opens the PR, and comments the link on the issue. |
-| `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request: `conftest` policy check + `chainctl policies check` against the registry's active pull policies + `grype` CVE-count scan, then posts a sticky **gate-summary** comment. |
-| `registry-policies.yml` | PR + merge on `registry-policies/**` | PR: validate + plan (preview create/update/delete). Merge: apply — create/update present manifests and prune removed ones, gated by the `registry-admin` environment. |
+| `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request — **scoped to the refs the PR changed**: `conftest` + `chainctl policies check` (ENFORCE denials fail, DRY_RUN warn) + `grype` CVE-count scan. Posts a sticky **gate-summary** comment and, on CVE failure, an itemized **CVE-details** comment. |
+| `registry-policies.yml` | PR + merge on `registry-policies/**` | PR: validate + plan (preview create/update/delete + binding changes). Merge: apply — create/update custom-policy manifests and prune removed ones, **and reconcile `bindings.yaml`** (enable policies / set mode + params), gated by the `registry-admin` environment. |
 | `library-policies.yml` | PR + merge on `library-policies/**` | PR: plan (preview create/update/delete) + current bindings. Merge: apply — create/update Libraries policies (cooldown + block/allow, per-ecosystem PREVIEW/ENFORCE) and prune removed ones, gated by the `registry-admin` environment. |
 
 ## Required secrets
