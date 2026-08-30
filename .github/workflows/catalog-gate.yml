@@ -42,6 +42,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { fetch-depth: 0 }   # need base history to diff changed refs
       - name: Auth to Chainguard
         uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
         with:
@@ -49,13 +50,14 @@ jobs:
       - name: Check requested images against active registry policies
         env:
           CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CUR_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          # Fail only on ENFORCE denials; DRY_RUN denials are reported as
-          # warnings so observe-mode policies inform without blocking the PR
-          # (see scripts/check-policies.py). list-source-refs.py emits
-          # fully-qualified refs (cgr.dev/$ORG/repo:tag) with ${VAR} expanded.
-          python3 scripts/list-source-refs.py | python3 scripts/check-policies.py
+          # Only the refs THIS PR changed (changed-refs.py; falls back to all on
+          # non-PR runs). Fail only on ENFORCE denials; DRY_RUN denials are
+          # warnings so observe-mode policies inform without blocking the PR.
+          python3 scripts/changed-refs.py | python3 scripts/check-policies.py
 
   cve-scan:
     runs-on: ubuntu-latest
@@ -69,6 +71,7 @@ jobs:
       MAX_HIGH: "0"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { fetch-depth: 0 }   # need base history to diff changed refs
       - name: Auth to Chainguard
         uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
         with:
@@ -81,11 +84,14 @@ jobs:
       - name: Scan requested images against CVE thresholds
         env:
           CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CUR_SHA: ${{ github.event.pull_request.head.sha }}
           CVE_REPORT: cve-report.md   # cve-gate.py writes offending CVEs here on failure
         run: |
           set -euo pipefail
-          # Fully-qualified source refs -> grype -> fail if over Critical/High max.
-          python3 scripts/list-source-refs.py | python3 scripts/cve-gate.py
+          # Only the refs THIS PR changed (changed-refs.py; falls back to all on
+          # non-PR runs) -> grype -> fail if over Critical/High max.
+          python3 scripts/changed-refs.py | python3 scripts/cve-gate.py
       - name: Comment CVE details on the PR
         # runs even when the scan step failed, so the requester sees WHAT to fix
         if: always() && github.event_name == 'pull_request'
