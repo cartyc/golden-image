@@ -61,7 +61,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write   # setup-chainctl configures the cgr.dev cred helper so grype can pull
+      id-token: write        # setup-chainctl configures the cgr.dev cred helper so grype can pull
+      pull-requests: write   # post the CVE-details comment on failure
     env:
       # Golden-catalog thresholds. Tune per org risk appetite; -1 = unlimited.
       MAX_CRITICAL: "0"
@@ -80,10 +81,35 @@ jobs:
       - name: Scan requested images against CVE thresholds
         env:
           CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+          CVE_REPORT: cve-report.md   # cve-gate.py writes offending CVEs here on failure
         run: |
           set -euo pipefail
           # Fully-qualified source refs -> grype -> fail if over Critical/High max.
           python3 scripts/list-source-refs.py | python3 scripts/cve-gate.py
+      - name: Comment CVE details on the PR
+        # runs even when the scan step failed, so the requester sees WHAT to fix
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          marker="<!-- cve-scan-details -->"
+          if [ -f cve-report.md ]; then
+            body="${marker}"$'\n'"$(cat cve-report.md)"
+          else
+            body="${marker}"$'\n'"## ✅ CVE gate passing — no Critical/High threshold breaches."
+          fi
+          # upsert a single sticky comment (edit if it exists, else create)
+          cid=$(gh api "repos/${REPO}/issues/${PR}/comments" --paginate \
+                  --jq "map(select(.body|contains(\"${marker}\")))|.[0].id // empty")
+          if [ -n "$cid" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${cid}" -f body="$body" >/dev/null
+            echo "updated CVE comment $cid"
+          else
+            gh pr comment "$PR" --repo "$REPO" --body "$body"
+          fi
 
   # Consolidated, human-friendly gate feedback as a sticky PR comment — so a
   # requester sees pass/fail for all three checks in one place without digging
