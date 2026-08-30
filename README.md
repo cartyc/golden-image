@@ -1,5 +1,38 @@
 # Chainguard Golden Images Pipeline Example
 
+## Contents
+
+- [Goals](#goals)
+- [Non-Goals](#non-goals)
+- [Pipeline overview](#pipeline-overview)
+  - [1. Custom Assembly — custom-assembly/*.yaml](#1-custom-assembly--custom-assemblyyaml)
+  - [2. Pass-through lane — cgr-sync.yaml + .github/workflows/passthrough-mirror.yaml](#2-pass-through-lane--cgr-syncyaml--githubworkflowspassthrough-mirroryaml)
+  - [Which lane?](#which-lane)
+- [Policy status dashboard](#policy-status-dashboard)
+- [Governance — managing & gating requests and releases](#governance--managing--gating-requests-and-releases)
+  - [1. Request → auto-PR](#1-request--auto-pr)
+  - [2. Gate (on the PR)](#2-gate-on-the-pr)
+  - [3. Registry pull policies (enforced by Chainguard, at pull time)](#3-registry-pull-policies-enforced-by-chainguard-at-pull-time)
+  - [4. Library pull policies (Chainguard Libraries — Java / npm / Python)](#4-library-pull-policies-chainguard-libraries--java--npm--python)
+  - [5. Release (recommended: gate the promotion)](#5-release-recommended-gate-the-promotion)
+  - [Demo flow](#demo-flow)
+- [Repository layout](#repository-layout)
+  - [Workflows (.github/workflows/)](#workflows-githubworkflows)
+- [Required secrets](#required-secrets)
+- [To Do](#to-do)
+- [Custom Assembly (custom-assembly/)](#custom-assembly-custom-assembly)
+  - [Prerequisites](#prerequisites)
+- [Runbook — common tasks](#runbook--common-tasks)
+  - [Add a pass-through image (mirror as-is)](#add-a-pass-through-image-mirror-as-is)
+  - [Customize **all** custom images](#customize-all-custom-images)
+  - [Customize **one** image](#customize-one-image)
+  - [Add a brand-new custom image](#add-a-brand-new-custom-image)
+  - [Rotate / replace the internal CA](#rotate--replace-the-internal-ca)
+  - [Change the locale (or other base env/packages)](#change-the-locale-or-other-base-envpackages)
+  - [Upgrade cgr-sync](#upgrade-cgr-sync)
+  - [Verify failures](#verify-failures)
+
+
 ## Goals
 
 - Demonstrate an ingestion pipeline for Chainguard images into a Golden Images repository
