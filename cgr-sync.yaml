@@ -62,3 +62,7 @@ repositories:
       list: ["1.30"]
 
 # reviewed by platform-eng (intake demo)
+
+  - name: node
+    tags:
+      list: ["22"]
