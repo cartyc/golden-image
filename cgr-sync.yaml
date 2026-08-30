@@ -56,3 +56,9 @@ repositories:
   - name: custom-jdk
     tags:
       list: ["latest"]
+
+  - name: nginx
+    tags:
+      list: ["1.30"]
+
+# reviewed by platform-eng (intake demo)
