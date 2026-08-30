@@ -4,9 +4,10 @@
 #   1. conftest — the catalog entry is well-formed and within policy
 #      (allowed source, pinned tags, package allowlist). Runs offline.
 #   2. chainctl policies check — the requested image would pass the REGISTRY's
-#      active pull policies (fips-required / min-version / no-eol / ...). A
-#      DENIED here (even DRY_RUN) fails the PR, so a non-compliant image never
-#      gets promoted into the golden registry.
+#      active pull policies (fips-required / min-version / max-age / no-eol).
+#      An ENFORCE denial fails the PR (a non-compliant image never gets
+#      promoted); a DRY_RUN denial is a warning, so observe-mode policies inform
+#      the reviewer without blocking.
 #   3. cve-scan — grype scans each requested image and fails the PR if its
 #      Critical/High CVE counts exceed the thresholds. Pull policies can't see
 #      CVEs (their input is package lifecycle metadata only), so this scanner
@@ -50,22 +51,11 @@ jobs:
           CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
         run: |
           set -euo pipefail
-          # Emit "repo:tag" source refs from the catalog and check each one.
-          # A DENIED/ERROR from any active policy exits non-zero and fails the PR.
-          fail=0
-          # list-source-refs.py emits fully-qualified refs (cgr.dev/$ORG/repo:tag)
-          # with ${VAR} expanded from the env, so check each ref as-is.
-          while read -r ref; do
-            [ -z "$ref" ] && continue
-            echo "::group::policies check $ref"
-            if chainctl policies check "$ref"; then
-              echo "  ALLOWED: $ref"
-            else
-              echo "::error::registry policy DENIED $ref"; fail=1
-            fi
-            echo "::endgroup::"
-          done < <(python3 scripts/list-source-refs.py)
-          exit $fail
+          # Fail only on ENFORCE denials; DRY_RUN denials are reported as
+          # warnings so observe-mode policies inform without blocking the PR
+          # (see scripts/check-policies.py). list-source-refs.py emits
+          # fully-qualified refs (cgr.dev/$ORG/repo:tag) with ${VAR} expanded.
+          python3 scripts/list-source-refs.py | python3 scripts/check-policies.py
 
   cve-scan:
     runs-on: ubuntu-latest
@@ -131,7 +121,7 @@ jobs:
           | Check | Result | What it verifies |
           |---|---|---|
           | conftest | $(icon "$C") | well-formed entry · source on cgr.dev · pinned tag · package allowlist · signature |
-          | policies check | $(icon "$P") | passes the registry's active pull policies (fips / min-version / max-age / no-eol) |
+          | policies check | $(icon "$P") | ENFORCE pull policies pass (fips / min-version / max-age / no-eol); DRY_RUN denials are warnings |
           | cve-scan | $(icon "$V") | grype Critical/High counts within threshold |
 
           _Auto-updated by Catalog gate on each push._

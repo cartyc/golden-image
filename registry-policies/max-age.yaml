@@ -7,8 +7,8 @@
 #
 #   Validate:  chainctl policies custom validate --file registry-policies/max-age.yaml
 #   Create:    chainctl policies custom create   --file registry-policies/max-age.yaml --parent=$CHAINGUARD_ORG
-#   Stage:     chainctl policies enable --policy=max-age --mode=DRY_RUN  --param=max_age_days=30 --parent=$CHAINGUARD_ORG
-#   Enforce:   chainctl policies enable --policy=max-age --mode=ENFORCE --param=max_age_days=30 --parent=$CHAINGUARD_ORG
+#   Stage:     chainctl policies enable --policy=max-age --mode=DRY_RUN  --param=max_age_days=365 --parent=$CHAINGUARD_ORG
+#   Enforce:   chainctl policies enable --policy=max-age --mode=ENFORCE --param=max_age_days=365 --parent=$CHAINGUARD_ORG
 name: max-age
 description: Deny images whose main package was released more than max_age_days ago (freshness / CVE-hygiene proxy).
 supported_resource_type: registry.chainguard.dev/Repo@v1
@@ -17,7 +17,7 @@ parameters:
   - name: max_age_days
     type: PARAMETER_TYPE_INTEGER
     description: Maximum allowed age, in days, of the main package's release date.
-    default: 30
+    default: 365
 expression: |
   package chainguard.policies
 

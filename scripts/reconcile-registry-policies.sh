@@ -31,6 +31,9 @@ echo
 echo "### Apply — create or update"
 shopt -s nullglob
 for f in "$DIR"/*.yaml; do
+  # bindings.yaml is the activation spec (see scripts/reconcile-bindings.py),
+  # not a custom-policy manifest — skip it here.
+  [ "$(basename "$f")" = "bindings.yaml" ] && continue
   name="$(_name < "$f")"
   chainctl policies custom validate --file "$f" >/dev/null   # never apply an invalid policy
   if chainctl policies describe --policy="$name" --parent="$CHAINGUARD_ORG" >/dev/null 2>&1; then
