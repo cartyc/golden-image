@@ -40,7 +40,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           OUT: site/index.html
         run: python3 scripts/policy-status.py
-      - uses: actions/upload-pages-artifact@v3 # digestabot will pin
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: site
   deploy:
@@ -54,4 +54,4 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v4 # digestabot will pin
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
