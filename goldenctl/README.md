@@ -10,6 +10,7 @@ into one tool with subcommands. Idiomatic with the Chainguard/Go stack
 goldenctl catalog refs [--file cgr-sync.yaml]     # fully-qualified source refs
 goldenctl catalog changed [--base SHA] [--cur SHA] # only the refs a PR changed
 goldenctl catalog add --name <repo> --tags <t1,t2> # add/extend a catalog entry
+goldenctl catalog verify                           # HEAD each source ref; 404 vs 401/403 vs ok (refs on stdin)
 goldenctl intake parse [--body B]                  # issue form -> JSON (stdin/$GITHUB_ISSUE_BODY)
 goldenctl intake overlay [--req req.json] [--out P] # scaffold a Custom Assembly stub
 goldenctl gate policies                            # ENFORCE denials fail, DRY_RUN warn (refs on stdin)
