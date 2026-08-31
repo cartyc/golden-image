@@ -83,6 +83,23 @@ func init() {
 		},
 	}
 
-	catalogCmd.AddCommand(refs, changed, add, verify)
+	giFile := catalog.File
+	goldenImages := &cobra.Command{
+		Use:   "golden-images",
+		Short: "TSV of post-mirror verify targets (name, tag, issuer, identity, identity_regexp)",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			lines, err := catalog.GoldenImages(giFile)
+			if err != nil {
+				return err
+			}
+			for _, l := range lines {
+				fmt.Println(l)
+			}
+			return nil
+		},
+	}
+	goldenImages.Flags().StringVar(&giFile, "file", catalog.File, "catalog file")
+
+	catalogCmd.AddCommand(refs, changed, add, verify, goldenImages)
 	root.AddCommand(catalogCmd)
 }
