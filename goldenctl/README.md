@@ -12,6 +12,8 @@ goldenctl catalog changed [--base SHA] [--cur SHA] # only the refs a PR changed
 goldenctl catalog add --name <repo> --tags <t1,t2> # add/extend a catalog entry
 goldenctl intake parse [--body B]                  # issue form -> JSON (stdin/$GITHUB_ISSUE_BODY)
 goldenctl intake overlay [--req req.json] [--out P] # scaffold a Custom Assembly stub
+goldenctl gate policies                            # ENFORCE denials fail, DRY_RUN warn (refs on stdin)
+goldenctl gate cve                                 # grype CVE-count gate (refs on stdin)
 ```
 
 Build: `go build -o goldenctl .` · Test: `go test ./...`
@@ -29,8 +31,8 @@ is retired.
 | `catalog add` | `scripts/add-catalog-entry.py` | ✅ ported |
 | `intake parse` | `scripts/parse-image-request.py` | ✅ ported |
 | `intake overlay` | `scripts/scaffold-overlay.py` | ✅ ported |
-| `gate policies` | `scripts/check-policies.py` | ⬜ next |
-| `gate cve` | `scripts/cve-gate.py` | ⬜ next |
+| `gate policies` | `scripts/check-policies.py` | ✅ ported |
+| `gate cve` | `scripts/cve-gate.py` | ✅ ported |
 | `policy reconcile` | `scripts/reconcile-registry-policies.sh` | ⬜ |
 | `policy bindings` | `scripts/reconcile-bindings.py` | ⬜ |
 | `policy libraries` | `scripts/reconcile-library-policies.py` | ⬜ |

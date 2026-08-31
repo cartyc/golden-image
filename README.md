@@ -161,18 +161,18 @@ appends a valid entry the same way.
     policy: sources on `cgr.dev`, packages on the approved allowlist, HTTPS
     runtime repos, signatures verified. Demo a denial:
     `conftest test --policy policy/conftest policy/conftest/examples/disallowed-package.yaml`.
-  - `chainctl policies check` (`scripts/check-policies.py`) — the image passes
+  - `chainctl policies check` (`goldenctl gate policies`) — the image passes
     the **registry's** active pull policies. An **ENFORCE** denial fails the PR
     (a non-compliant image is never promoted); a **DRY_RUN** denial is a
     *warning* only, so observe-mode policies inform the reviewer without
     blocking.
-  - `cve-scan` (`scripts/cve-gate.py`) — `grype` scans the image and fails the
+  - `cve-scan` (`goldenctl gate cve`) — `grype` scans the image and fails the
     PR if its Critical/High CVE counts exceed the thresholds
     (`MAX_CRITICAL`/`MAX_HIGH`, default `0`/`0`; `MAX_MEDIUM` unlimited). Pull
     policies can't see CVEs — their input is package lifecycle metadata only —
     so this scanner step is the actual **CVE-count** gate. Tune the thresholds
     in the workflow `env:`.
-  - Both checks are **scoped to the refs the PR changed** (`scripts/changed-refs.py`),
+  - Both checks are **scoped to the refs the PR changed** (`goldenctl catalog changed`),
     so a request is judged on its own change, not the whole catalog's
     pre-existing state. Whole-catalog coverage still runs via the scheduled
     **passthrough-mirror** verify job and a manual **Catalog gate** dispatch
@@ -234,7 +234,7 @@ then gated promote to prod) for the canonical two-tier release control.
 | `custom-assembly/` | Chainguard **Custom Assembly** overlays — declarative, server-side image customizations (apko). | See the table rows below; the build workflow merges the base with each per-image overlay and applies the result. |
 | &nbsp;&nbsp;`custom-assembly/all.yaml` | The **base** overlay, merged into **every** custom image. | Put things that should apply everywhere here — common packages, env vars, annotations, and the internal CA. Edit this to change all custom images at once. |
 | &nbsp;&nbsp;`custom-assembly/<image>.yaml` | A **per-image** overlay (e.g. `python.yaml`, `jdk.yaml`). | Image-specific packages/config, layered on top of `all.yaml`. The filename maps to a target repo in the build workflow's matrix; to customize one image, edit its file. |
-| `scripts/` | Helper scripts the CI calls (not run by hand normally). | **Catalog refs:** `list-source-refs.py` (source refs for the existence check), `list-golden-images.py` (post-mirror verify targets), `changed-refs.py` (only the refs a PR changed). **Intake:** `parse-image-request.py` (issue form → fields), `add-catalog-entry.py` (the single catalog-entry writer), `scaffold-overlay.py` (Custom Assembly stub). **Gate:** `check-policies.py` (pull-policy check; ENFORCE fails, DRY_RUN warns), `cve-gate.py` (grype CVE-count gate + PR-comment report). **Policies:** `reconcile-registry-policies.sh` (custom-policy definitions), `reconcile-bindings.py` (policy activation), `reconcile-library-policies.py` (Libraries policies). **Dashboard:** `policy-status.py` (GitHub Pages status page). |
+| `scripts/` | Helper scripts the CI calls (not run by hand normally). | **Catalog refs:** `list-source-refs.py` (source refs for the existence check), `list-golden-images.py` (post-mirror verify targets). **Intake:** `parse-image-request.py` (issue form → fields), `add-catalog-entry.py` (the single catalog-entry writer), `scaffold-overlay.py` (Custom Assembly stub). **Policies:** `reconcile-registry-policies.sh` (custom-policy definitions), `reconcile-bindings.py` (policy activation), `reconcile-library-policies.py` (Libraries policies). **Dashboard:** `policy-status.py` (GitHub Pages status page). Catalog-gate + changed-refs logic now lives in the **`goldenctl`** Go CLI (`goldenctl/`); scripts are being ported to it. |
 | `.github/workflows/` | The CI lanes (see the next table). | — |
 | `LICENSE` | Apache-2.0. | — |
 
