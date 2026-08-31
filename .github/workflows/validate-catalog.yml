@@ -13,7 +13,6 @@ on:
     branches: [main]
     paths:
       - cgr-sync.yaml
-      - scripts/list-source-refs.py
       - .github/workflows/validate-catalog.yml
 
 permissions: {}
@@ -33,6 +32,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: { go-version-file: goldenctl/go.mod, cache-dependency-path: goldenctl/go.sum }
+      - name: Build goldenctl
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          go build -C goldenctl -o "$RUNNER_TEMP/bin/goldenctl" .
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
       - name: Auth to Chainguard source (cgr.dev)
         uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
         with:
@@ -40,23 +47,8 @@ jobs:
 
       - name: Each source image:tag exists
         run: |
-          set -uo pipefail
-          refs=$(python3 scripts/list-source-refs.py cgr-sync.yaml)
-          if [ -z "$refs" ]; then
-            echo "no source refs resolved from cgr-sync.yaml"; exit 1
-          fi
-          missing=0
-          while IFS= read -r ref; do
-            [ -n "$ref" ] || continue
-            if docker manifest inspect "$ref" >/dev/null 2>&1; then
-              echo "ok: ${ref}"
-            else
-              echo "::error::not found at source: ${ref}"
-              missing=1
-            fi
-          done <<< "$refs"
-          if [ "$missing" -ne 0 ]; then
-            echo "::error::one or more catalog images/tags do not exist at the source"
-            exit 1
-          fi
-          echo "all catalog source refs exist"
+          set -euo pipefail
+          # goldenctl catalog verify HEADs each manifest and classifies failures
+          # (404 not-published vs 401/403 access-denied) instead of the old
+          # blanket "not found" — see goldenctl/internal/catalog/verify.go.
+          goldenctl catalog refs | goldenctl catalog verify

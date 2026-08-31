@@ -72,6 +72,17 @@ func init() {
 	_ = add.MarkFlagRequired("name")
 	_ = add.MarkFlagRequired("tags")
 
-	catalogCmd.AddCommand(refs, changed, add)
+	verify := &cobra.Command{
+		Use:   "verify",
+		Short: "Check each source ref exists/pullable (404 vs 401/403 vs ok); refs on stdin",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if code := catalog.Verify(readRefs()); code != 0 {
+				os.Exit(code)
+			}
+			return nil
+		},
+	}
+
+	catalogCmd.AddCommand(refs, changed, add, verify)
 	root.AddCommand(catalogCmd)
 }
