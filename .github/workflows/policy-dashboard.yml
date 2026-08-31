@@ -29,6 +29,13 @@ jobs:
       actions: read     # gh api: recent workflow runs
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: { go-version-file: goldenctl/go.mod, cache-dependency-path: goldenctl/go.sum }
+      - name: Build goldenctl
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          go build -C goldenctl -o "$RUNNER_TEMP/bin/goldenctl" .
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Auth to Chainguard
         uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
         with:
@@ -39,7 +46,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
           OUT: site/index.html
-        run: python3 scripts/policy-status.py
+        run: goldenctl dashboard
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: site

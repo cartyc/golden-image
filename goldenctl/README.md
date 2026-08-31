@@ -15,6 +15,7 @@ goldenctl intake overlay [--req req.json] [--out P] # scaffold a Custom Assembly
 goldenctl gate policies                            # ENFORCE denials fail, DRY_RUN warn (refs on stdin)
 goldenctl gate cve                                 # grype CVE-count gate (refs on stdin)
 goldenctl policy reconcile|bindings|libraries      # reconcile policies (env: MODE, CHAINGUARD_ORG, PREV_SHA, CUR_SHA)
+goldenctl dashboard [--mock] [--out P]             # render the Pages status page (env: CHAINGUARD_ORG, GITHUB_REPOSITORY, OUT)
 ```
 
 Build: `go build -o goldenctl .` · Test: `go test ./...`
@@ -37,7 +38,7 @@ is retired.
 | `policy reconcile` | `scripts/reconcile-registry-policies.sh` | ✅ ported |
 | `policy bindings` | `scripts/reconcile-bindings.py` | ✅ ported |
 | `policy libraries` | `scripts/reconcile-library-policies.py` | ✅ ported |
-| `dashboard` | `scripts/policy-status.py` | ⬜ |
+| `dashboard` | `scripts/policy-status.py` | ✅ ported |
 
 Until a command is ported and its workflow rewired, the original script remains
 in place — the two coexist during the migration.
