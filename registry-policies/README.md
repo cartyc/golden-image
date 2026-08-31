@@ -43,10 +43,10 @@ truth for the custom policies this repo manages:
 
 Two things are codified here and both are applied by the workflow on merge:
 - **Definitions** — the custom-policy `*.yaml` manifests (reconciled by
-  `scripts/reconcile-registry-policies.sh`).
+  `goldenctl policy reconcile`).
 - **Bindings** — `bindings.yaml` declares which policies are *enabled*, their
   mode (`DRY_RUN`/`ENFORCE`), and parameters, including **system** policies like
-  `no-eol` (reconciled by `scripts/reconcile-bindings.py`). Because everything
+  `no-eol` (reconciled by `goldenctl policy bindings`). Because everything
   starts in `DRY_RUN`, merging never starts blocking pulls on its own — flipping
   a binding to `ENFORCE` in `bindings.yaml` is the deliberate, reviewed step.
 

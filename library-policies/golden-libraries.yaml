@@ -11,7 +11,7 @@
 # adds is an explicit BLOCKLIST (known-bad packages / compromised versions) and
 # justified ALLOW exceptions — the part a platform team owns and reviews.
 #
-# Reconciled by scripts/reconcile-library-policies.py (see library-policies/README.md).
+# Reconciled by goldenctl policy libraries (see library-policies/README.md).
 name: golden-libraries
 description: Org blocklist + justified exceptions layered on the inherited cooldown/malware gates.
 

@@ -3,7 +3,7 @@
 Declarative source of truth for the **Chainguard Libraries** policies that gate
 which language packages (Java / npm / Python) this org may pull from
 `libraries.cgr.dev`. The folder is reconciled to the platform by
-[`scripts/reconcile-library-policies.py`](../scripts/reconcile-library-policies.py)
+`goldenctl policy libraries`
 via the **Library policies** workflow.
 
 ## How these differ from `registry-policies/`

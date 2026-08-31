@@ -1,6 +1,6 @@
 # Which pull policies are ENABLED on the org registry, and how — the source of
 # truth for policy *activation*, alongside the custom-policy manifests in this
-# folder. Applied by scripts/reconcile-bindings.py via the Registry policies
+# folder. Applied by goldenctl policy bindings via the Registry policies
 # workflow (plan on PR, apply on merge). `chainctl policies enable` is
 # idempotent, so re-applying just reconciles mode/params.
 #
