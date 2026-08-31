@@ -191,7 +191,7 @@ Independently of CI, the org registry enforces **pull-time** policy — see
 `cooldown`, `support-window`). Both the definitions *and their activation* are
 codified: `registry-policies/bindings.yaml` declares which policies are enabled,
 their mode (`DRY_RUN`/`ENFORCE`) and parameters (reconciled by
-`scripts/reconcile-bindings.py`). Everything starts in `DRY_RUN`; review
+`goldenctl policy bindings`). Everything starts in `DRY_RUN`; review
 `chainctl policies decision list`, then flip a binding to `ENFORCE` in
 `bindings.yaml`. Exceptions are per-digest, attributable **overrides**.
 
@@ -202,7 +202,7 @@ are **declarative** (not Rego): Chainguard applies **cooldown + malware/greyware
 gates automatically, and a policy here adds an explicit **blocklist** (by purl,
 optionally pinned to a bad `@version`) plus **justified allow exceptions**.
 Activated per ecosystem (`--ecosystem JAVA|JAVASCRIPT|PYTHON`) in `PREVIEW`,
-then `ENFORCE`. Reconciled by `scripts/reconcile-library-policies.py` via the
+then `ENFORCE`. Reconciled by `goldenctl policy libraries` via the
 **Library policies** workflow.
 
 ### 5. Release (recommended: gate the promotion)
@@ -234,7 +234,7 @@ then gated promote to prod) for the canonical two-tier release control.
 | `custom-assembly/` | Chainguard **Custom Assembly** overlays — declarative, server-side image customizations (apko). | See the table rows below; the build workflow merges the base with each per-image overlay and applies the result. |
 | &nbsp;&nbsp;`custom-assembly/all.yaml` | The **base** overlay, merged into **every** custom image. | Put things that should apply everywhere here — common packages, env vars, annotations, and the internal CA. Edit this to change all custom images at once. |
 | &nbsp;&nbsp;`custom-assembly/<image>.yaml` | A **per-image** overlay (e.g. `python.yaml`, `jdk.yaml`). | Image-specific packages/config, layered on top of `all.yaml`. The filename maps to a target repo in the build workflow's matrix; to customize one image, edit its file. |
-| `scripts/` | Helper scripts the CI calls (not run by hand normally). | **Catalog refs:** `list-source-refs.py` (source refs for the existence check), `list-golden-images.py` (post-mirror verify targets). **Intake:** `parse-image-request.py` (issue form → fields), `add-catalog-entry.py` (the single catalog-entry writer), `scaffold-overlay.py` (Custom Assembly stub). **Policies:** `reconcile-registry-policies.sh` (custom-policy definitions), `reconcile-bindings.py` (policy activation), `reconcile-library-policies.py` (Libraries policies). **Dashboard:** `policy-status.py` (GitHub Pages status page). Catalog-gate + changed-refs logic now lives in the **`goldenctl`** Go CLI (`goldenctl/`); scripts are being ported to it. |
+| `scripts/` | Helper scripts the CI calls (not run by hand normally). | **Catalog refs:** `list-source-refs.py` (source refs for the existence check), `list-golden-images.py` (post-mirror verify targets). **Intake:** `parse-image-request.py` (issue form → fields), `add-catalog-entry.py` (the single catalog-entry writer), `scaffold-overlay.py` (Custom Assembly stub). **Dashboard:** `policy-status.py` (GitHub Pages status page). Catalog-gate + changed-refs logic now lives in the **`goldenctl`** Go CLI (`goldenctl/`); scripts are being ported to it. |
 | `.github/workflows/` | The CI lanes (see the next table). | — |
 | `LICENSE` | Apache-2.0. | — |
 

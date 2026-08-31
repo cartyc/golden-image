@@ -14,6 +14,7 @@ goldenctl intake parse [--body B]                  # issue form -> JSON (stdin/$
 goldenctl intake overlay [--req req.json] [--out P] # scaffold a Custom Assembly stub
 goldenctl gate policies                            # ENFORCE denials fail, DRY_RUN warn (refs on stdin)
 goldenctl gate cve                                 # grype CVE-count gate (refs on stdin)
+goldenctl policy reconcile|bindings|libraries      # reconcile policies (env: MODE, CHAINGUARD_ORG, PREV_SHA, CUR_SHA)
 ```
 
 Build: `go build -o goldenctl .` · Test: `go test ./...`
@@ -33,9 +34,9 @@ is retired.
 | `intake overlay` | `scripts/scaffold-overlay.py` | ✅ ported |
 | `gate policies` | `scripts/check-policies.py` | ✅ ported |
 | `gate cve` | `scripts/cve-gate.py` | ✅ ported |
-| `policy reconcile` | `scripts/reconcile-registry-policies.sh` | ⬜ |
-| `policy bindings` | `scripts/reconcile-bindings.py` | ⬜ |
-| `policy libraries` | `scripts/reconcile-library-policies.py` | ⬜ |
+| `policy reconcile` | `scripts/reconcile-registry-policies.sh` | ✅ ported |
+| `policy bindings` | `scripts/reconcile-bindings.py` | ✅ ported |
+| `policy libraries` | `scripts/reconcile-library-policies.py` | ✅ ported |
 | `dashboard` | `scripts/policy-status.py` | ⬜ |
 
 Until a command is ported and its workflow rewired, the original script remains
