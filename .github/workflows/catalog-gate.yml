@@ -43,6 +43,13 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { fetch-depth: 0 }   # need base history to diff changed refs
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: { go-version-file: goldenctl/go.mod, cache-dependency-path: goldenctl/go.sum }
+      - name: Build goldenctl
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          go build -C goldenctl -o "$RUNNER_TEMP/bin/goldenctl" .
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Auth to Chainguard
         uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
         with:
@@ -54,10 +61,9 @@ jobs:
           CUR_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          # Only the refs THIS PR changed (changed-refs.py; falls back to all on
-          # non-PR runs). Fail only on ENFORCE denials; DRY_RUN denials are
-          # warnings so observe-mode policies inform without blocking the PR.
-          python3 scripts/changed-refs.py | python3 scripts/check-policies.py
+          # Only the refs THIS PR changed (falls back to all on non-PR runs).
+          # Fail only on ENFORCE denials; DRY_RUN denials are warnings.
+          goldenctl catalog changed | goldenctl gate policies
 
   cve-scan:
     runs-on: ubuntu-latest
@@ -72,6 +78,13 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { fetch-depth: 0 }   # need base history to diff changed refs
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: { go-version-file: goldenctl/go.mod, cache-dependency-path: goldenctl/go.sum }
+      - name: Build goldenctl
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          go build -C goldenctl -o "$RUNNER_TEMP/bin/goldenctl" .
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Auth to Chainguard
         uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
         with:
@@ -86,12 +99,12 @@ jobs:
           CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           CUR_SHA: ${{ github.event.pull_request.head.sha }}
-          CVE_REPORT: cve-report.md   # cve-gate.py writes offending CVEs here on failure
+          CVE_REPORT: cve-report.md   # goldenctl writes offending CVEs here on failure
         run: |
           set -euo pipefail
-          # Only the refs THIS PR changed (changed-refs.py; falls back to all on
-          # non-PR runs) -> grype -> fail if over Critical/High max.
-          python3 scripts/changed-refs.py | python3 scripts/cve-gate.py
+          # Only the refs THIS PR changed (falls back to all on non-PR runs) ->
+          # grype -> fail if over Critical/High max.
+          goldenctl catalog changed | goldenctl gate cve
       - name: Comment CVE details on the PR
         # runs even when the scan step failed, so the requester sees WHAT to fix
         if: always() && github.event_name == 'pull_request'
