@@ -145,7 +145,7 @@ reviews and adds the **`approved`** label; the **Image request intake** workflow
 `cgr-sync.yaml` entry (and, for the Custom Assembly lane, scaffolds a
 `custom-assembly/<image>.yaml` overlay stub), opens the PR `Closes`-ing the
 issue, and comments the PR link back — so **no one hand-edits YAML**. Prefer to
-author the PR yourself? `scripts/add-catalog-entry.py --name <repo> --tags <t1,t2>`
+author the PR yourself? `goldenctl catalog add --name <repo> --tags <t1,t2>`
 appends a valid entry the same way.
 
 > One-time setup: create an `approved` label, and (optional) set an `INTAKE_PAT`
@@ -234,7 +234,7 @@ then gated promote to prod) for the canonical two-tier release control.
 | `custom-assembly/` | Chainguard **Custom Assembly** overlays — declarative, server-side image customizations (apko). | See the table rows below; the build workflow merges the base with each per-image overlay and applies the result. |
 | &nbsp;&nbsp;`custom-assembly/all.yaml` | The **base** overlay, merged into **every** custom image. | Put things that should apply everywhere here — common packages, env vars, annotations, and the internal CA. Edit this to change all custom images at once. |
 | &nbsp;&nbsp;`custom-assembly/<image>.yaml` | A **per-image** overlay (e.g. `python.yaml`, `jdk.yaml`). | Image-specific packages/config, layered on top of `all.yaml`. The filename maps to a target repo in the build workflow's matrix; to customize one image, edit its file. |
-| `scripts/` | Helper scripts the CI calls (not run by hand normally). | **Catalog refs:** `list-source-refs.py` (source refs for the existence check), `list-golden-images.py` (post-mirror verify targets). **Intake:** `parse-image-request.py` (issue form → fields), `add-catalog-entry.py` (the single catalog-entry writer), `scaffold-overlay.py` (Custom Assembly stub). Catalog-gate + changed-refs logic now lives in the **`goldenctl`** Go CLI (`goldenctl/`); scripts are being ported to it. |
+| `goldenctl/` | The **Go CLI** the CI calls for all catalog / intake / gate / policy / dashboard helpers (one binary, unit-tested). | Subcommands: `catalog refs\|changed\|add\|verify\|golden-images`, `intake parse\|overlay`, `gate policies\|cve`, `policy reconcile\|bindings\|libraries`, `dashboard`. Built per-job with `setup-go`; see `goldenctl/README.md`. |
 | `.github/workflows/` | The CI lanes (see the next table). | — |
 | `LICENSE` | Apache-2.0. | — |
 

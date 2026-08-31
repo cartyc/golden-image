@@ -3,8 +3,8 @@ name: validate
 # Lint the workflows and configs on every PR and push to main:
 #   - actionlint  : GitHub Actions syntax + expressions (+ shellcheck on run:)
 #   - yamllint    : YAML hygiene incl. duplicate keys
-#   - config check: cgr-sync.yaml / custom-assembly overlays parse, and the
-#                   image-list helper the verify job depends on still works
+#   - config check: cgr-sync.yaml / custom-assembly overlays parse
+#     (the goldenctl helpers are built + tested by the goldenctl workflow)
 
 on:
   pull_request:
@@ -30,7 +30,7 @@ jobs:
           pipx install yamllint
           yamllint -d relaxed .github/ cgr-sync.yaml custom-assembly/
 
-      - name: Validate configs + image-list helper
+      - name: Validate configs parse
         run: |
           python3 - <<'PY'
           import glob, yaml
@@ -38,6 +38,3 @@ jobs:
               yaml.safe_load(open(f))
               print("parsed", f)
           PY
-          out=$(python3 scripts/list-golden-images.py cgr-sync.yaml)
-          if [ -z "$out" ]; then echo "list-golden-images.py produced no images"; exit 1; fi
-          echo "image list:"; echo "$out"

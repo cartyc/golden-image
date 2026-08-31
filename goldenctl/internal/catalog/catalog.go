@@ -33,15 +33,23 @@ type tagList struct {
 	List []string `yaml:"list"`
 }
 
+type verifyPolicy struct {
+	Issuer         string `yaml:"certificate_oidc_issuer"`
+	Identity       string `yaml:"certificate_identity"`
+	IdentityRegexp string `yaml:"certificate_identity_regexp"`
+}
+
 type doc struct {
 	Defaults struct {
-		Source string  `yaml:"source"`
-		Tags   tagList `yaml:"tags"`
+		Source string        `yaml:"source"`
+		Tags   tagList       `yaml:"tags"`
+		Verify *verifyPolicy `yaml:"verify"`
 	} `yaml:"defaults"`
 	Repositories []struct {
-		Name   string  `yaml:"name"`
-		Source string  `yaml:"source"`
-		Tags   tagList `yaml:"tags"`
+		Name   string        `yaml:"name"`
+		Source string        `yaml:"source"`
+		Tags   tagList       `yaml:"tags"`
+		Verify *verifyPolicy `yaml:"verify"`
 	} `yaml:"repositories"`
 }
 
