@@ -148,9 +148,13 @@ issue, and comments the PR link back — so **no one hand-edits YAML**. Prefer t
 author the PR yourself? `goldenctl catalog add --name <repo> --tags <t1,t2>`
 appends a valid entry the same way.
 
-> One-time setup: create an `approved` label, and (optional) set an `INTAKE_PAT`
-> secret so the bot-opened PR triggers Catalog gate immediately (a PR opened with
-> the default `GITHUB_TOKEN` doesn't trigger other workflows).
+> One-time setup: create an `approved` label. To make the bot-opened PR trigger
+> Catalog gate immediately (a PR opened with the default `GITHUB_TOKEN` doesn't
+> trigger other workflows), provide **one** of: a **GitHub App** (secrets
+> `INTAKE_APP_ID` + `INTAKE_APP_PRIVATE_KEY`, recommended — short-lived token
+> scoped to this repo) or a fine-grained **`INTAKE_PAT`** (contents +
+> pull-requests write). Without either, the PR still opens; gates run on the
+> first human push.
 
 ### 2. Gate (on the PR)
 - **CODEOWNERS** (`.github/CODEOWNERS`) — Platform Engineering must approve any

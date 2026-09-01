@@ -11,9 +11,12 @@
 #
 # NOTE: a PR opened with the default GITHUB_TOKEN does NOT trigger other
 # workflows (GitHub's recursion guard), so Catalog gate won't auto-run on the
-# bot PR. Set an `INTAKE_PAT` secret (fine-grained PAT: contents + pull-requests
-# write) and this workflow uses it, so the gates run immediately. Without it the
-# PR is still opened; the gates run on the first human push/label.
+# bot PR. To make it self-gate, provide ONE of (checked in this order):
+#   1. a GitHub App — secrets INTAKE_APP_ID + INTAKE_APP_PRIVATE_KEY (recommended:
+#      short-lived token, scoped to this repo's contents + pull-requests), or
+#   2. a fine-grained PAT in the INTAKE_PAT secret (contents + pull-requests write).
+# With neither, the PR is still opened via GITHUB_TOKEN; the gates run on the
+# first human push/label.
 name: Image request intake
 on:
   issues:
@@ -29,9 +32,20 @@ jobs:
       github.event.label.name == 'approved' &&
       contains(github.event.issue.labels.*.name, 'image-request')
     runs-on: ubuntu-latest
+    env:
+      # Prefer a GitHub App token so the bot-opened PR triggers Catalog gate
+      # (a PR opened with the default GITHUB_TOKEN does not). See header note.
+      HAS_APP: ${{ secrets.INTAKE_APP_ID != '' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/goldenctl
+      - name: Mint a GitHub App token (if configured)
+        id: app-token
+        if: env.HAS_APP == 'true'
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ secrets.INTAKE_APP_ID }}
+          private-key: ${{ secrets.INTAKE_APP_PRIVATE_KEY }}
 
       - name: Parse the request
         id: parse
@@ -69,7 +83,7 @@ jobs:
       - name: Open the catalog PR
         if: steps.change.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.INTAKE_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.INTAKE_PAT || secrets.GITHUB_TOKEN }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
           set -euo pipefail
@@ -110,7 +124,7 @@ jobs:
           - [ ] FIPS requirement satisfied
           - [ ] **Catalog gate** green (conftest + policies check + CVE scan)
 
-          > Opened by the intake bot. If Catalog gate did not run, set the \`INTAKE_PAT\` secret (see the workflow header).
+          > Opened by the intake bot. If Catalog gate did not run, configure an intake GitHub App or \`INTAKE_PAT\` (see the workflow header).
           EOF
           )
           pr_url=$(gh pr create --base main --head "$branch" \
@@ -122,7 +136,7 @@ jobs:
       - name: Nothing to change
         if: steps.change.outputs.changed != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.INTAKE_PAT || secrets.GITHUB_TOKEN }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
           gh issue comment "$ISSUE" --body "ℹ️ Approved, but the catalog already contains this image + tags — no PR needed."
