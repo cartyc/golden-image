@@ -203,7 +203,7 @@ gates automatically, and a policy here adds an explicit **blocklist** (by purl,
 optionally pinned to a bad `@version`) plus **justified allow exceptions**.
 Activated per ecosystem (`--ecosystem JAVA|JAVASCRIPT|PYTHON`) in `PREVIEW`,
 then `ENFORCE`. Reconciled by `goldenctl policy libraries` via the
-**Library policies** workflow.
+**Policies** workflow.
 
 ### 5. Release (recommended: gate the promotion)
 The mirror is timer/manual today. For a human **release gate**, run promotion
@@ -249,8 +249,7 @@ then gated promote to prod) for the canonical two-tier release control.
 | `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
 | `image-request-intake.yml` | issue labeled `approved` | Turns an approved **image-request** issue into a ready-to-review PR: parses the form, appends the `cgr-sync.yaml` entry (+ scaffolds a `custom-assembly/<image>.yaml` stub for the Custom Assembly lane), opens the PR, and comments the link on the issue. |
 | `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request — **scoped to the refs the PR changed**: `conftest` + `chainctl policies check` (ENFORCE denials fail, DRY_RUN warn) + `grype` CVE-count scan. Posts a sticky **gate-summary** comment and, on CVE failure, an itemized **CVE-details** comment. |
-| `registry-policies.yml` | PR + merge on `registry-policies/**` | PR: validate + plan (preview create/update/delete + binding changes). Merge: apply — create/update custom-policy manifests and prune removed ones, **and reconcile `bindings.yaml`** (enable policies / set mode + params), gated by the `registry-admin` environment. |
-| `library-policies.yml` | PR + merge on `library-policies/**` | PR: plan (preview create/update/delete) + current bindings. Merge: apply — create/update Libraries policies (cooldown + block/allow, per-ecosystem PREVIEW/ENFORCE) and prune removed ones, gated by the `registry-admin` environment. |
+| `policies.yml` | PR + merge on `registry-policies/**` or `library-policies/**` | Unified plan → gate → apply for **both** container pull policies (`registry-policies/`, incl. `bindings.yaml`) and Libraries policies (`library-policies/`): preview on PR, reconcile + prune on merge, gated by the `registry-admin` environment. |
 
 ## Required secrets
 

@@ -1,0 +1,14 @@
+name: Set up goldenctl
+description: Build the goldenctl CLI from source and add it to PATH.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      with:
+        go-version-file: goldenctl/go.mod
+        cache-dependency-path: goldenctl/go.sum
+    - shell: bash
+      run: |
+        mkdir -p "$RUNNER_TEMP/bin"
+        go build -C goldenctl -o "$RUNNER_TEMP/bin/goldenctl" .
+        echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
