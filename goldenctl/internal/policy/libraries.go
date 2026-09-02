@@ -83,6 +83,42 @@ func libSpecFlags(spec libSpec) []string {
 	return flags
 }
 
+// bindingModeToken maps a policy mode to the token chainctl uses in its
+// AlreadyExists error (e.g. mode ENFORCE -> "BINDING_MODE_ENFORCED").
+func bindingModeToken(mode string) string {
+	if strings.EqualFold(mode, "ENFORCE") {
+		return "ENFORCED"
+	}
+	return strings.ToUpper(mode) // PREVIEW
+}
+
+// enableBinding enables a library policy binding idempotently. Unlike the
+// registry `policies enable`, `chainctl libraries policy enable` returns
+// AlreadyExists when a binding for the same ecosystem+mode already exists, which
+// would abort an otherwise no-op re-apply. Treat that as success — but only when
+// the existing mode matches the requested one, so a genuine PREVIEW<->ENFORCE
+// change still surfaces (it won't report AlreadyExists for our target mode) and
+// is never silently dropped.
+func enableBinding(apply bool, org, name, ecosystem, mode string) error {
+	cmd := []string{"chainctl", "libraries", "policy", "enable", name, "--parent", org, "--ecosystem", ecosystem, "--mode", mode}
+	fmt.Println("    $ " + strings.Join(cmd, " "))
+	if !apply {
+		return nil
+	}
+	out, errOut, code := capture(cmd...)
+	fmt.Print(out)
+	if code == 0 {
+		return nil
+	}
+	combined := errOut + out
+	if strings.Contains(combined, "AlreadyExists") && strings.Contains(combined, bindingModeToken(mode)) {
+		fmt.Printf("  already bound %s -> %s (%s) — no change\n", name, ecosystem, mode)
+		return nil
+	}
+	fmt.Fprint(os.Stderr, errOut)
+	return &cmdError{code, cmd}
+}
+
 // createOrUpdate creates the policy, falling back to update if it already exists.
 func createOrUpdate(apply bool, createCmd, updateCmd []string) error {
 	fmt.Println("    $ " + strings.Join(createCmd, " "))
@@ -148,7 +184,7 @@ func Libraries(mode, org, prevSHA, curSHA string) error {
 		}
 		for _, bd := range spec.Bindings {
 			fmt.Printf("- bind `%s` -> %s (%s)\n", spec.Name, bd.Ecosystem, bd.Mode)
-			if err := run(apply, []string{"chainctl", "libraries", "policy", "enable", spec.Name, "--parent", org, "--ecosystem", bd.Ecosystem, "--mode", bd.Mode}); err != nil {
+			if err := enableBinding(apply, org, spec.Name, bd.Ecosystem, bd.Mode); err != nil {
 				return err
 			}
 		}
