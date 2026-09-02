@@ -40,5 +40,10 @@ bindings:
 
   # System policy: deny versions past their end-of-life date. This is the
   # signal we actually want for abandonment — keyed off the real EOL date.
+  # First REAL ENFORCE: the per-policy breakdown showed no-eol at 0 Deny /
+  # 0 Error across the whole catalog, so enforcing blocks nothing today but puts
+  # teeth on end-of-life — any catalog image that later passes its EOL date is
+  # blocked at pull. (min-version stays DRY_RUN: at floor 0.0.0 it's a no-op, so
+  # enforcing it buys nothing until a real floor is set.)
   - policy: no-eol
-    mode: DRY_RUN
+    mode: ENFORCE
