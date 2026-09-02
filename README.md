@@ -191,8 +191,8 @@ appends a valid entry the same way.
 ### 3. Registry pull policies (enforced by Chainguard, at pull time)
 Independently of CI, the org registry enforces **pull-time** policy — see
 [`registry-policies/`](registry-policies/README.md). Custom Rego policies here:
-`fips-required`, `min-version`, `max-age`; plus system policies (`no-eol`,
-`cooldown`, `support-window`). Both the definitions *and their activation* are
+`fips-required`; plus system policies (`no-eol`, `cooldown`, `support-window`).
+Both the definitions *and their activation* are
 codified: `registry-policies/bindings.yaml` declares which policies are enabled,
 their mode (`DRY_RUN`/`ENFORCE`) and parameters (reconciled by
 `goldenctl policy bindings`). Everything starts in `DRY_RUN`; review
