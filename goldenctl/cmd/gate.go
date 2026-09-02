@@ -45,7 +45,15 @@ func init() {
 			return nil
 		},
 	}
+	breakdown := &cobra.Command{
+		Use:   "breakdown",
+		Short: "Per-policy would-deny summary across the catalog (informational; never fails)",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			gate.Breakdown(readRefs())
+			return nil
+		},
+	}
 
-	gateCmd.AddCommand(policies, cve)
+	gateCmd.AddCommand(policies, cve, breakdown)
 	root.AddCommand(gateCmd)
 }

@@ -66,6 +66,10 @@ jobs:
               fi
             done < <(goldenctl catalog refs)
           } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Would-deny breakdown (per policy)
+        run: |
+          set -o pipefail
+          goldenctl catalog refs | goldenctl gate breakdown | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Plan registry bindings (preview enable)
         run: |
           set -o pipefail
