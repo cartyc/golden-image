@@ -29,6 +29,47 @@ func TestParseAndClassify(t *testing.T) {
 	}
 }
 
+func TestSummarizeAndRender(t *testing.T) {
+	// jre: fips denies (DRY_RUN), no-eol allows, min-version (ENFORCE) allows.
+	// nginx: fips denies (DRY_RUN), no-eol denies (ENFORCE... shown as ENFORCE).
+	evals := []refEval{
+		{"jre:openjdk-21", parseRows(` POLICY | MODE | P | RESULT
+ fips-required | DRY_RUN | x | DENIED
+ no-eol        | DRY_RUN | x | ALLOWED
+ min-version   | ENFORCE | x | ALLOWED `)},
+		{"nginx:1.30", parseRows(` POLICY | MODE | P | RESULT
+ fips-required | DRY_RUN | x | DENIED
+ no-eol        | DRY_RUN | x | DENIED
+ min-version   | ENFORCE | x | ALLOWED `)},
+	}
+	sums := summarize(evals)
+	if len(sums) != 3 {
+		t.Fatalf("sums=%d: %+v", len(sums), sums)
+	}
+	byName := map[string]polSummary{}
+	for _, s := range sums {
+		byName[s.policy] = s
+	}
+	if got := len(byName["fips-required"].denied); got != 2 {
+		t.Fatalf("fips denied=%d", got)
+	}
+	if got := len(byName["no-eol"].denied); got != 1 || byName["no-eol"].denied[0] != "nginx:1.30" {
+		t.Fatalf("no-eol denied=%+v", byName["no-eol"].denied)
+	}
+	if got := len(byName["min-version"].denied); got != 0 {
+		t.Fatalf("min-version should deny nothing, got %+v", byName["min-version"].denied)
+	}
+	if byName["min-version"].mode != "ENFORCE" {
+		t.Fatalf("min-version mode=%q", byName["min-version"].mode)
+	}
+	out := renderBreakdown(sums, 2, 1)
+	for _, want := range []string{"| fips-required | DRY_RUN | 2 |", "| no-eol | DRY_RUN | 1 | nginx:1.30 |", "| min-version | ENFORCE | 0 | — |", "2 image(s) evaluated, 1 skipped"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("render missing %q in:\n%s", want, out)
+		}
+	}
+}
+
 func TestAnalyzeAndBreaches(t *testing.T) {
 	limits := map[string]int{"Critical": 0, "High": 0, "Medium": -1}
 	data := []byte(`{"matches":[

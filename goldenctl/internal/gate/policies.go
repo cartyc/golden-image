@@ -64,6 +64,103 @@ func lastLine(stderr, stdout string) string {
 	return lines[len(lines)-1]
 }
 
+// --- Per-policy would-deny breakdown (planning aid, never fails the job) ------
+
+type refEval struct {
+	short string
+	rows  []policyRow
+}
+
+type polSummary struct {
+	policy string
+	mode   string
+	denied []string // image shorts this policy alone would deny
+}
+
+// summarize inverts per-ref policy rows into a per-policy view: for each bound
+// policy (in first-seen order) it collects the images that policy denies. A
+// policy that denies nothing still appears (with an empty list) so a reader can
+// see at a glance which DRY_RUN policies are safe to flip to ENFORCE. ENFORCE
+// wins as the displayed mode if a policy ever shows both.
+func summarize(evals []refEval) []polSummary {
+	mode := map[string]string{}
+	denied := map[string][]string{}
+	var order []string
+	for _, e := range evals {
+		for _, r := range e.rows {
+			if _, ok := mode[r.policy]; !ok {
+				order = append(order, r.policy)
+				mode[r.policy] = r.mode
+			}
+			if r.mode == "ENFORCE" {
+				mode[r.policy] = "ENFORCE"
+			}
+			if badResult[r.result] {
+				denied[r.policy] = append(denied[r.policy], e.short)
+			}
+		}
+	}
+	out := make([]polSummary, len(order))
+	for i, p := range order {
+		out[i] = polSummary{p, mode[p], denied[p]}
+	}
+	return out
+}
+
+// renderBreakdown formats the summary as a Markdown step-summary table.
+func renderBreakdown(sums []polSummary, evaluated, skipped int) string {
+	var b strings.Builder
+	b.WriteString("### Would-deny breakdown (per policy)\n")
+	b.WriteString("_Every catalog image checked against every bound policy. ENFORCE blocks pulls now; DRY_RUN would block once enforced._\n\n")
+	fmt.Fprintf(&b, "_%d image(s) evaluated", evaluated)
+	if skipped > 0 {
+		fmt.Fprintf(&b, ", %d skipped (could not evaluate)", skipped)
+	}
+	b.WriteString("._\n\n")
+	if len(sums) == 0 {
+		b.WriteString("No policies evaluated.\n")
+		return b.String()
+	}
+	b.WriteString("| Policy | Mode | Would-deny | Images |\n|---|---|--:|---|\n")
+	for _, s := range sums {
+		imgs := "—"
+		if len(s.denied) > 0 {
+			imgs = strings.Join(s.denied, ", ")
+		}
+		fmt.Fprintf(&b, "| %s | %s | %d | %s |\n", s.policy, s.mode, len(s.denied), imgs)
+	}
+	b.WriteString("\n> A **DRY_RUN** policy with **0** would-deny is safe to flip to ENFORCE. Any images listed will be blocked once that policy enforces — review them first.\n")
+	return b.String()
+}
+
+// runCheck runs `chainctl policies check` for one ref and returns its per-policy
+// rows (empty if the image could not be evaluated).
+func runCheck(ref string) []policyRow {
+	cmd := exec.Command("chainctl", "policies", "check", ref)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	_ = cmd.Run()
+	return parseRows(stdout.String())
+}
+
+// Breakdown evaluates every ref against all bound policies and prints a
+// per-policy would-deny summary to stdout (pipe to $GITHUB_STEP_SUMMARY). It is
+// purely informational — a planning aid for deciding which DRY_RUN policy is
+// safe to enforce next — and never fails the job.
+func Breakdown(refs []string) {
+	var evals []refEval
+	skipped := 0
+	for _, ref := range refs {
+		rows := runCheck(ref)
+		if len(rows) == 0 {
+			skipped++
+			continue
+		}
+		evals = append(evals, refEval{catalog.Short(ref), rows})
+	}
+	fmt.Print(renderBreakdown(summarize(evals), len(evals), skipped))
+}
+
 // CheckPolicies runs `chainctl policies check` for each ref. It fails (returns 1)
 // only on ENFORCE denials; DRY_RUN denials are reported as warnings.
 func CheckPolicies(refs []string) int {
