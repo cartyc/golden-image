@@ -7,7 +7,13 @@
 # form, appends the cgr-sync.yaml entry (and, for the Custom Assembly lane,
 # scaffolds a custom-assembly/<image>.yaml overlay stub), opens a PR that
 # `Closes` the issue, and comments the PR link back on the issue. The normal
-# Catalog gate + CODEOWNERS review still apply to that PR.
+# Catalog gate + CODEOWNERS review still apply to that PR. For the Pass-through
+# lane the bot also ARMS auto-merge (--auto --squash): the PR merges itself once
+# Catalog gate is green AND a reviewer approves — a human stays in the loop, only
+# the manual "click merge" goes away. Custom Assembly PRs stay fully manual.
+# (Auto-merge needs the repo's "Allow auto-merge" setting + branch protection
+# with a required review and the required Catalog gate check; without them,
+# arming is a no-op and the PR just waits for a manual merge.)
 #
 # NOTE: a PR opened with the default GITHUB_TOKEN does NOT trigger other
 # workflows (GitHub's recursion guard), so Catalog gate won't auto-run on the
@@ -89,6 +95,7 @@ jobs:
           set -euo pipefail
           name=$(jq -r .repo_name req.json)
           tags=$(jq -r '.tags | join(", ")' req.json)
+          is_custom=$(jq -r .is_custom req.json)
           lane=$(jq -r 'if .is_custom then "Custom Assembly" else "Pass-through" end' req.json)
           owner=$(jq -r .owner req.json)
           fips=$(jq -r 'if .fips_required then "Yes" else "No" end' req.json)
@@ -131,7 +138,25 @@ jobs:
             --title "intake: ${name} (${tags}) — request #${ISSUE}" \
             --body "$body")
           echo "PR: $pr_url"
-          gh issue comment "$ISSUE" --body "✅ Approved — opened catalog PR: ${pr_url}. Platform Engineering will review the gate results there."
+
+          # Pass-through lane: arm auto-merge so the PR merges ITSELF once every
+          # branch-protection condition is met — i.e. Catalog gate is green AND a
+          # human reviewer (CODEOWNERS) approves. This removes the manual "click
+          # merge" chore but keeps a human in the loop; GitHub won't merge until
+          # the required review lands. Custom Assembly PRs touch overlay files and
+          # stay fully manual. Needs repo "Allow auto-merge" + branch protection
+          # with required review + required Catalog gate check; if either is
+          # missing, arming is a no-op warning and the PR just waits for a manual
+          # merge (unchanged behaviour).
+          automerge_note=""
+          if [ "$is_custom" != "true" ]; then
+            if gh pr merge --auto --squash "$pr_url"; then
+              automerge_note=" Auto-merge is armed — it will merge once Catalog gate is green and a reviewer approves."
+            else
+              echo "::warning::could not arm auto-merge (repo auto-merge disabled or no branch protection?) — PR will wait for a manual merge"
+            fi
+          fi
+          gh issue comment "$ISSUE" --body "✅ Approved — opened catalog PR: ${pr_url}. Platform Engineering will review the gate results there.${automerge_note}"
 
       - name: Nothing to change
         if: steps.change.outputs.changed != 'true'
