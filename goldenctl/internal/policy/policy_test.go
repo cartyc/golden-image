@@ -5,6 +5,25 @@ import (
 	"testing"
 )
 
+func TestBindingModeToken(t *testing.T) {
+	// The chainctl AlreadyExists error names the existing mode; the token must
+	// match the real error string so a same-mode re-apply is swallowed and a
+	// mode change is not.
+	if got := bindingModeToken("ENFORCE"); got != "ENFORCED" {
+		t.Fatalf("ENFORCE -> %q", got)
+	}
+	if got := bindingModeToken("PREVIEW"); got != "PREVIEW" {
+		t.Fatalf("PREVIEW -> %q", got)
+	}
+	realErr := "AlreadyExists desc = binding for ecosystem JAVA with mode BINDING_MODE_ENFORCED already exists"
+	if !strings.Contains(realErr, bindingModeToken("ENFORCE")) {
+		t.Fatal("ENFORCE token should match the real AlreadyExists error")
+	}
+	if strings.Contains(realErr, bindingModeToken("PREVIEW")) {
+		t.Fatal("PREVIEW token must NOT match an ENFORCED AlreadyExists (would drop a mode change)")
+	}
+}
+
 func TestReadName(t *testing.T) {
 	manifest := `# comment
 name: max-age
