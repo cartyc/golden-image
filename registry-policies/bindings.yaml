@@ -18,12 +18,13 @@ bindings:
       allow_non_fips: false
 
   # 5-day pull-time cooldown for containers (twin of the Libraries cooldown).
-  # Staged DRY_RUN first: the deployed policy must exist before the per-policy
-  # breakdown can confirm it denies nothing on the current catalog (every
-  # catalog version is well older than 5 days), and only then is it flipped to
-  # ENFORCE. Keys on the version release date, so rebuilds aren't re-quarantined.
+  # Now ENFORCE: staged DRY_RUN in #99, then the per-policy breakdown confirmed
+  # 0 Deny / 0 Error on the current catalog (every catalog version is well older
+  # than 5 days), so enforcing blocks nothing today and only quarantines a
+  # genuinely new upstream version (<5 days). Keys on the version release date,
+  # so a rebuild of an existing version is never re-quarantined.
   - policy: version-cooldown
-    mode: DRY_RUN
+    mode: ENFORCE
     params:
       cooldown_days: 5
 
