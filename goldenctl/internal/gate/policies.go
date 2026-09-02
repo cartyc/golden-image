@@ -72,19 +72,24 @@ type refEval struct {
 }
 
 type polSummary struct {
-	policy string
-	mode   string
-	denied []string // image shorts this policy alone would deny
+	policy  string
+	mode    string
+	denied  []string // images this policy DENIES (logic decision: allow is false)
+	errored []string // images where the policy expression ERRORED (a policy bug)
 }
 
 // summarize inverts per-ref policy rows into a per-policy view: for each bound
-// policy (in first-seen order) it collects the images that policy denies. A
-// policy that denies nothing still appears (with an empty list) so a reader can
-// see at a glance which DRY_RUN policies are safe to flip to ENFORCE. ENFORCE
-// wins as the displayed mode if a policy ever shows both.
+// policy (in first-seen order) it collects the images that policy denies and,
+// separately, the images where the policy expression ERRORED. Both block a pull
+// under ENFORCE, but they mean different things: DENIED is the policy working as
+// written; ERROR is the Rego throwing on that image's input (a policy bug to
+// fix, not a real violation). A policy that neither denies nor errors still
+// appears, so a reader can see which DRY_RUN policies are safe to enforce.
+// ENFORCE wins as the displayed mode if a policy ever shows both.
 func summarize(evals []refEval) []polSummary {
 	mode := map[string]string{}
 	denied := map[string][]string{}
+	errored := map[string][]string{}
 	var order []string
 	for _, e := range evals {
 		for _, r := range e.rows {
@@ -95,23 +100,28 @@ func summarize(evals []refEval) []polSummary {
 			if r.mode == "ENFORCE" {
 				mode[r.policy] = "ENFORCE"
 			}
-			if badResult[r.result] {
+			switch r.result {
+			case "ERROR":
+				errored[r.policy] = append(errored[r.policy], e.short)
+			case "DENIED":
 				denied[r.policy] = append(denied[r.policy], e.short)
 			}
 		}
 	}
 	out := make([]polSummary, len(order))
 	for i, p := range order {
-		out[i] = polSummary{p, mode[p], denied[p]}
+		out[i] = polSummary{p, mode[p], denied[p], errored[p]}
 	}
 	return out
 }
 
-// renderBreakdown formats the summary as a Markdown step-summary table.
+// renderBreakdown formats the summary as a Markdown step-summary table. The
+// Images column annotates errored images as `name (ERROR)` so a policy bug is
+// visually distinct from a genuine denial.
 func renderBreakdown(sums []polSummary, evaluated, skipped int) string {
 	var b strings.Builder
 	b.WriteString("### Would-deny breakdown (per policy)\n")
-	b.WriteString("_Every catalog image checked against every bound policy. ENFORCE blocks pulls now; DRY_RUN would block once enforced._\n\n")
+	b.WriteString("_Every catalog image checked against every bound policy. ENFORCE blocks pulls now; DRY_RUN would block once enforced. **DENY** = policy decided to block; **ERROR** = the policy expression threw on that image (a policy bug — it also blocks under ENFORCE)._\n\n")
 	fmt.Fprintf(&b, "_%d image(s) evaluated", evaluated)
 	if skipped > 0 {
 		fmt.Fprintf(&b, ", %d skipped (could not evaluate)", skipped)
@@ -121,15 +131,20 @@ func renderBreakdown(sums []polSummary, evaluated, skipped int) string {
 		b.WriteString("No policies evaluated.\n")
 		return b.String()
 	}
-	b.WriteString("| Policy | Mode | Would-deny | Images |\n|---|---|--:|---|\n")
+	b.WriteString("| Policy | Mode | Deny | Error | Images |\n|---|---|--:|--:|---|\n")
 	for _, s := range sums {
-		imgs := "—"
-		if len(s.denied) > 0 {
-			imgs = strings.Join(s.denied, ", ")
+		var imgs []string
+		imgs = append(imgs, s.denied...)
+		for _, e := range s.errored {
+			imgs = append(imgs, e+" (ERROR)")
 		}
-		fmt.Fprintf(&b, "| %s | %s | %d | %s |\n", s.policy, s.mode, len(s.denied), imgs)
+		cell := "—"
+		if len(imgs) > 0 {
+			cell = strings.Join(imgs, ", ")
+		}
+		fmt.Fprintf(&b, "| %s | %s | %d | %d | %s |\n", s.policy, s.mode, len(s.denied), len(s.errored), cell)
 	}
-	b.WriteString("\n> A **DRY_RUN** policy with **0** would-deny is safe to flip to ENFORCE. Any images listed will be blocked once that policy enforces — review them first.\n")
+	b.WriteString("\n> A **DRY_RUN** policy with **0** Deny and **0** Error is safe to flip to ENFORCE. Deny images are real violations to review; **Error images signal a policy bug** — fix the expression before enforcing, or it will block those pulls for the wrong reason.\n")
 	return b.String()
 }
 

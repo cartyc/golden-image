@@ -30,13 +30,13 @@ func TestParseAndClassify(t *testing.T) {
 }
 
 func TestSummarizeAndRender(t *testing.T) {
-	// jre: fips denies (DRY_RUN), no-eol allows, min-version (ENFORCE) allows.
-	// nginx: fips denies (DRY_RUN), no-eol denies (ENFORCE... shown as ENFORCE).
+	// jre: fips denies (DRY_RUN), no-eol allows, min-version (ENFORCE) ERRORS.
+	// nginx: fips denies (DRY_RUN), no-eol denies (DRY_RUN), min-version allows.
 	evals := []refEval{
 		{"jre:openjdk-21", parseRows(` POLICY | MODE | P | RESULT
  fips-required | DRY_RUN | x | DENIED
  no-eol        | DRY_RUN | x | ALLOWED
- min-version   | ENFORCE | x | ALLOWED `)},
+ min-version   | ENFORCE | x | ERROR `)},
 		{"nginx:1.30", parseRows(` POLICY | MODE | P | RESULT
  fips-required | DRY_RUN | x | DENIED
  no-eol        | DRY_RUN | x | DENIED
@@ -56,14 +56,23 @@ func TestSummarizeAndRender(t *testing.T) {
 	if got := len(byName["no-eol"].denied); got != 1 || byName["no-eol"].denied[0] != "nginx:1.30" {
 		t.Fatalf("no-eol denied=%+v", byName["no-eol"].denied)
 	}
+	// min-version: 0 denials, 1 ERROR (the jre bug), mode shown as ENFORCE.
 	if got := len(byName["min-version"].denied); got != 0 {
 		t.Fatalf("min-version should deny nothing, got %+v", byName["min-version"].denied)
+	}
+	if got := byName["min-version"].errored; len(got) != 1 || got[0] != "jre:openjdk-21" {
+		t.Fatalf("min-version errored=%+v", got)
 	}
 	if byName["min-version"].mode != "ENFORCE" {
 		t.Fatalf("min-version mode=%q", byName["min-version"].mode)
 	}
 	out := renderBreakdown(sums, 2, 1)
-	for _, want := range []string{"| fips-required | DRY_RUN | 2 |", "| no-eol | DRY_RUN | 1 | nginx:1.30 |", "| min-version | ENFORCE | 0 | — |", "2 image(s) evaluated, 1 skipped"} {
+	for _, want := range []string{
+		"| fips-required | DRY_RUN | 2 | 0 |",
+		"| no-eol | DRY_RUN | 1 | 0 | nginx:1.30 |",
+		"| min-version | ENFORCE | 0 | 1 | jre:openjdk-21 (ERROR) |",
+		"2 image(s) evaluated, 1 skipped",
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("render missing %q in:\n%s", want, out)
 		}
