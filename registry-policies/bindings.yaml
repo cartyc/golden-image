@@ -17,12 +17,15 @@ bindings:
     params:
       allow_non_fips: false
 
-  # First policy taken to ENFORCE. At floor 0.0.0 it denies NOTHING (every valid
-  # semver is >= 0.0.0 and non-semver streams are exempt), so enforcing here is a
-  # zero-deny activation of the enforcement path + approval gate. Raise `floor`
-  # per real end-of-support need later; that raise is the change that can block.
+  # ROLLED BACK to DRY_RUN. ENFORCE at floor 0.0.0 was expected to be zero-deny,
+  # but the per-policy would-deny breakdown showed min-version denies the three
+  # jre streams (jre:latest, jre:openjdk-21, jre:openjdk-21-dev) — the Rego's
+  # semver/non-semver handling does not cover jre's main-package version shape,
+  # so it falls through to `default allow := false`. Back to DRY_RUN until the
+  # policy is fixed to treat jre like the other non-semver streams; re-enforce
+  # only once the breakdown shows min-version at 0 would-deny.
   - policy: min-version
-    mode: ENFORCE
+    mode: DRY_RUN
     params:
       floor: "0.0.0"
 
