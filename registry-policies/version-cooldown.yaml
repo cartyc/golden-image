@@ -1,0 +1,60 @@
+# Chainguard custom container policy — a pull-time COOLDOWN for the golden
+# registry. Quarantines brand-new package versions: deny an image whose main
+# package version was released within the last `cooldown_days` days, so a fresh
+# (potentially compromised or unvetted) upstream release has to "bake" before it
+# can be pulled/promoted. This is the container-registry twin of the Libraries
+# cooldown (library-policies/golden-libraries.yaml).
+#
+# Named `version-cooldown` (not `cooldown`) to avoid colliding with the built-in
+# system `cooldown` policy — this one is a custom, fully-controllable 5-day
+# window keyed on the version RELEASE date.
+#
+# IMPORTANT — keys on the VERSION's release date, not the image rebuild/push
+# date. A Chainguard REBUILD of an already-established version does NOT reset that
+# date, so daily CVE-patched rebuilds of an existing version are never blocked;
+# only a genuinely new upstream version younger than the window is held. That's
+# the intended cooldown semantics and the reason this won't stop you pulling a
+# fresh patched rebuild.
+#
+#   Validate:  chainctl policies custom validate --file registry-policies/version-cooldown.yaml
+#   Create:    chainctl policies custom create   --file registry-policies/version-cooldown.yaml --parent=$CHAINGUARD_ORG
+#   Stage:     chainctl policies enable --policy=version-cooldown --mode=DRY_RUN  --param=cooldown_days=5 --parent=$CHAINGUARD_ORG
+#   Enforce:   chainctl policies enable --policy=version-cooldown --mode=ENFORCE --param=cooldown_days=5 --parent=$CHAINGUARD_ORG
+name: version-cooldown
+description: Deny images whose main package version was released within cooldown_days days (quarantine brand-new versions).
+supported_resource_type: registry.chainguard.dev/Repo@v1
+expression_type: EXPRESSION_TYPE_REGO
+parameters:
+  - name: cooldown_days
+    type: PARAMETER_TYPE_INTEGER
+    description: Quarantine window, in days. A main-package version younger than this is denied.
+    default: 5
+expression: |
+  package chainguard.policies
+
+  import rego.v1
+
+  # Default-allow: the cooldown blocks only what it can definitely date as too
+  # new. An image with no release date on record can't be aged, so it is allowed
+  # here (other policies still apply).
+  default allow := true
+
+  # Parse an RFC3339 date/datetime to epoch nanoseconds; tolerate a bare
+  # "YYYY-MM-DD" by assuming midnight UTC.
+  _ns(s) := t if {
+    t := time.parse_rfc3339_ns(s)
+  } else := t if {
+    t := time.parse_rfc3339_ns(sprintf("%sT00:00:00Z", [s]))
+  }
+
+  # Deny ONLY when we can compute an age AND the version is younger than the
+  # window. releaseDate is the version's release date, so a rebuild of an
+  # existing version (same version, new digest) is not re-quarantined.
+  allow := false if {
+    input.main_package_version.releaseDate
+    input.main_package_version.releaseDate != ""
+    released := _ns(input.main_package_version.releaseDate)
+    now := _ns(input.create_time)
+    age_days := (now - released) / (((1000 * 1000 * 1000) * 60 * 60) * 24)
+    age_days < input.parameters.cooldown_days
+  }
