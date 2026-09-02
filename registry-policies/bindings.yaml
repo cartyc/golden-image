@@ -4,8 +4,8 @@
 # workflow (plan on PR, apply on merge). `chainctl policies enable` is
 # idempotent, so re-applying just reconciles mode/params.
 #
-#   - Custom policies (fips-required) are defined by the *.yaml manifests here;
-#     this file controls their binding + parameters.
+#   - Custom policies (fips-required / version-cooldown) are defined by the
+#     *.yaml manifests here; this file controls their binding + parameters.
 #   - System policies (no-eol / cooldown / support-window) have NO manifest —
 #     they're built in and enabled by name.
 #
@@ -16,6 +16,16 @@ bindings:
     mode: DRY_RUN
     params:
       allow_non_fips: false
+
+  # 5-day pull-time cooldown for containers (twin of the Libraries cooldown).
+  # Staged DRY_RUN first: the deployed policy must exist before the per-policy
+  # breakdown can confirm it denies nothing on the current catalog (every
+  # catalog version is well older than 5 days), and only then is it flipped to
+  # ENFORCE. Keys on the version release date, so rebuilds aren't re-quarantined.
+  - policy: version-cooldown
+    mode: DRY_RUN
+    params:
+      cooldown_days: 5
 
   # NOTE: min-version and max-age were RETIRED. max-age keyed on the version
   # stream's release date, so it false-flagged current supported versions

@@ -24,6 +24,7 @@ allows it. A single ENFORCE-mode `DENIED` blocks the pull.
 | File | Effect | Parameter |
 | --- | --- | --- |
 | `fips-required.yaml` | Deny images whose main package has no FIPS build | `allow_non_fips` (bool, default `false`) |
+| `version-cooldown.yaml` | Deny images whose main package version is younger than the cooldown window (quarantine brand-new versions) | `cooldown_days` (int, default `5`) |
 
 ## How these get applied (GitOps)
 
