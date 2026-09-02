@@ -16,8 +16,15 @@ name: golden-libraries
 description: Org blocklist + justified exceptions layered on the inherited cooldown/malware gates.
 
 # Optional. 0 disables, 1-30 sets an explicit window, omit to inherit the
-# system default. Set stricter than the inherited 7d to demonstrate layering.
-cooldown_days: 14
+# system default.
+#
+# Set to 5 per an explicit request for a 5-day cooldown on all packages. NOTE:
+# this org also inherits an ENFORCED `default-7d-cooldown`, and cooldown windows
+# compose to the STRICTER (longer) one — so the effective quarantine may remain
+# 7 days regardless of this 5. Verify the live window with
+# `chainctl libraries policy ...` / a pull test; to truly reach 5 you'd have to
+# relax the inherited 7-day policy (an org-level change outside this repo).
+cooldown_days: 5
 
 # Packages to always deny, by purl. Append @<version> to block one version and
 # leave the rest allowed. purl namespace selects the ecosystem:
@@ -40,10 +47,16 @@ allow:
     override_cooldown: true
     justification: "Vetted core dependency; approved by security review 2026-08-26."
 
-# Activate the policy per ecosystem. Start in PREVIEW (observe-only) — it records
-# what WOULD be blocked without denying pulls — then flip to ENFORCE once the
-# blocklist is reviewed. Modes: PREVIEW | ENFORCE.
+# Activate the policy per ecosystem. Now ENFORCE (was PREVIEW) so the 5-day
+# cooldown actually gates pulls across Java / JavaScript / Python. Modes:
+# PREVIEW | ENFORCE.
+#
+# WARNING: ENFORCE also activates the block / allow lists above, which still
+# contain EXAMPLE placeholders (left-pad, evil-demo-package, com.example/bad-lib).
+# Enforcing them blocks those (mostly non-existent) packages — harmless but not
+# curated. Replace them with a real blocklist (e.g. Sept 2025 npm compromised
+# versions + your internal dep-confusion names) when you get the chance.
 bindings:
-  - { ecosystem: JAVA,       mode: PREVIEW }
-  - { ecosystem: JAVASCRIPT, mode: PREVIEW }
-  - { ecosystem: PYTHON,     mode: PREVIEW }
+  - { ecosystem: JAVA,       mode: ENFORCE }
+  - { ecosystem: JAVASCRIPT, mode: ENFORCE }
+  - { ecosystem: PYTHON,     mode: ENFORCE }
