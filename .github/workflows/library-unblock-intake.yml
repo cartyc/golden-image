@@ -10,6 +10,10 @@
 # PR that `Closes` the issue, and comments the PR link back. The Policies plan +
 # CODEOWNERS review still apply to that PR, and it takes effect on merge+apply.
 #
+# INTENTIONALLY NOT AUTO-MERGED. Unlike the pass-through image intake, these PRs
+# waive a real security gate (cooldown / malware / blocklist), so a human must
+# review and merge every one — do not add `gh pr merge --auto` here.
+#
 # NOTE: a PR opened with the default GITHUB_TOKEN does NOT trigger other
 # workflows (GitHub's recursion guard). To make dependent gates run on the bot
 # PR, provide ONE of (checked in this order):
