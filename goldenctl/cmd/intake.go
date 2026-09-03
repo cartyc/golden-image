@@ -69,6 +69,68 @@ func init() {
 	overlay.Flags().StringVar(&reqFile, "req", "", "parsed request JSON file (default stdin)")
 	overlay.Flags().StringVar(&outFile, "out", "", "output path (default stdout)")
 
-	intakeCmd.AddCommand(parse, overlay)
+	var ubBody string
+	parseUnblock := &cobra.Command{
+		Use:   "parse-unblock",
+		Short: "Parse a library-unblock issue-form body (--body, $GITHUB_ISSUE_BODY, or stdin) to JSON",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			b := ubBody
+			if b == "" {
+				b = os.Getenv("GITHUB_ISSUE_BODY")
+			}
+			if b == "" {
+				in, _ := io.ReadAll(os.Stdin)
+				b = string(in)
+			}
+			u, err := intake.ParseUnblock(b)
+			if err != nil {
+				return err
+			}
+			fmt.Println(u.JSON())
+			return nil
+		},
+	}
+	parseUnblock.Flags().StringVar(&ubBody, "body", "", "issue body")
+
+	var ubReq, ubFile string
+	unblockApply := &cobra.Command{
+		Use:   "unblock-apply",
+		Short: "Apply a parsed unblock request to library-policies/golden-libraries.yaml",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			var data []byte
+			var err error
+			if ubReq != "" {
+				data, err = os.ReadFile(ubReq)
+			} else {
+				data, err = io.ReadAll(os.Stdin)
+			}
+			if err != nil {
+				return err
+			}
+			u, err := intake.UnblockFromJSON(data)
+			if err != nil {
+				return err
+			}
+			text, err := os.ReadFile(ubFile)
+			if err != nil {
+				return err
+			}
+			out, action, changed, err := intake.ApplyUnblock(string(text), u)
+			if err != nil {
+				return err
+			}
+			if changed {
+				if err := os.WriteFile(ubFile, []byte(out), 0o644); err != nil {
+					return err
+				}
+			}
+			fmt.Printf("changed=%t %s\n", changed, action)
+			return nil
+		},
+	}
+	unblockApply.Flags().StringVar(&ubReq, "req", "", "parsed unblock JSON file (default stdin)")
+	unblockApply.Flags().StringVar(&ubFile, "file", "library-policies/golden-libraries.yaml", "library policy file to edit")
+
+	intakeCmd.AddCommand(parse, overlay, parseUnblock, unblockApply)
 	root.AddCommand(intakeCmd)
 }
