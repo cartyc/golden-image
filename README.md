@@ -209,6 +209,17 @@ Activated per ecosystem (`--ecosystem JAVA|JAVASCRIPT|PYTHON`) in `PREVIEW`,
 then `ENFORCE`. Reconciled by `goldenctl policy libraries` via the
 **Policies** workflow.
 
+**Unblock requests (self-service).** When an enforced gate blocks a pull, a
+developer files a **Library unblock request** issue
+(`.github/ISSUE_TEMPLATE/library-unblock.yml`) — ecosystem, package coordinate,
+optional version, what's blocking it, and a justification. Platform Engineering
+reviews and adds the **`approved`** label; the **Library unblock intake**
+workflow (`.github/workflows/library-unblock-intake.yml`) then edits
+`golden-libraries.yaml` — adding an `allow` exception with the right
+cooldown/malware overrides (and dropping a matching `block` line) — and opens a
+PR `Closes`-ing the issue. Same review + apply path as any policy change; no
+hand-edited YAML. Mirrors the image-request intake in [§1](#1-request--auto-pr).
+
 ### 5. Release (recommended: gate the promotion)
 The mirror is timer/manual today. For a human **release gate**, run promotion
 through a protected GitHub **Environment** so an approver signs off before an

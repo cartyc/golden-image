@@ -1,0 +1,59 @@
+name: Library unblock request
+description: Request that a blocked library (package) version be allowed through the Chainguard Libraries gates.
+title: "[library unblock] <ecosystem>: <package>"
+labels: ["library-unblock"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when a `libraries.cgr.dev` pull was **blocked** — by the cooldown
+        (version too new), a malware/greyware flag, or the org blocklist.
+        Platform Engineering reviews each request; when an approver adds the
+        **`approved`** label, automation opens a PR adding the exception to
+        `library-policies/golden-libraries.yaml`, which is gated and applied on
+        merge. You don't edit any YAML.
+  - type: dropdown
+    id: ecosystem
+    attributes:
+      label: Ecosystem
+      options:
+        - Java (Maven)
+        - JavaScript (npm)
+        - Python (PyPI)
+    validations: { required: true }
+  - type: input
+    id: coordinate
+    attributes:
+      label: Package coordinate
+      description: "npm: `left-pad` or `@scope/name` · PyPI: `requests` · Maven: `group:artifact`"
+      placeholder: "@babel/core"
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Version (optional)
+      description: A specific version to unblock. Leave blank to unblock the whole package (broader — avoid if you can).
+      placeholder: "7.24.0"
+  - type: dropdown
+    id: reason
+    attributes:
+      label: What's blocking it?
+      description: If you're not sure, pick "Both / not sure".
+      options:
+        - Cooldown — version too new
+        - Malware / greyware flag
+        - Org blocklist entry
+        - Both / not sure
+    validations: { required: true }
+  - type: input
+    id: owner
+    attributes:
+      label: Requesting team / owner
+      placeholder: team-payments
+    validations: { required: true }
+  - type: textarea
+    id: justification
+    attributes:
+      label: Justification
+      description: Why this package/version is needed and why it's safe to allow (e.g. reviewed by security, internal vetting). Required for a malware override.
+    validations: { required: true }
