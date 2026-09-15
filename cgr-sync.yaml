@@ -49,7 +49,7 @@ repositories:
   # bootstrap first.
   - name: custom-python
     tags:
-      list: ["latest"]
+      list: ["latest", "3.14"]
 
   # Custom Assembly jdk variant from custom-assembly/jdk.yaml — same one-time
   # bootstrap with `--repo jdk --save-as custom-jdk`.
