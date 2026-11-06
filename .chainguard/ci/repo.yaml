@@ -31,7 +31,7 @@ checks:
   conftest:
     description: the catalog and Custom Assembly overlays are within policy
     when:
-      changed: ["cgr-sync.yaml", "custom-assembly/**", "policy/**"]
+      changed: ["cgr-sync.yaml", "custom-assembly/**", "policy/**", ".chainguard/**"]
     shell: bash
     script: |
       set -euo pipefail
@@ -41,7 +41,7 @@ checks:
   goldenctl:
     description: go vet, test and build, then the offline overlay check
     when:
-      changed: ["goldenctl/**", "custom-assembly/**"]
+      changed: ["goldenctl/**", "custom-assembly/**", ".chainguard/**"]
     network:
       # proxy.golang.org redirects module zips to storage.googleapis.com.
       egress: [proxy.golang.org, sum.golang.org, storage.googleapis.com]
