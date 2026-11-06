@@ -1,0 +1,45 @@
+# Workload identities for Chainguard Checks (.chainguard/ci/repo.yaml).
+#
+# cgr-pull lets the registry checks, catalog-exists and cve-scan, pull from
+# the org's cgr.dev namespace. Chainguard Checks adds the registry.pull
+# credential to their credential-free requests to cgr.dev outside the check's
+# VM, so nothing in the VM holds a token and the checks don't need chainctl.
+# The other half is the assumable identity named below, in chriscarty.com: it
+# trusts issuer https://issuer.enforce.dev, subject
+# chainguard:<repository-id>:cgr-pull and audience https://issuer.enforce.dev,
+# and is bound to registry.pull.
+#
+# The repository is public, so the trust section gives the identity only to
+# pull requests opened by cartyc and to runs after merging. Anyone else's pull
+# request shows the two registry checks as "Could not be executed"; the GitHub
+# Actions they mirror still run there. Checks reads the definitions from the
+# base branch and the trust section from main, so this file has to be on main
+# before a check can use the identity.
+version: 1
+trust:
+  groups:
+    maintainers:
+      github:
+        user: {cartyc: 5873035}
+  subrings:
+    trusted:
+      authors: [maintainers]
+  # Checks get no GitHub token during the beta, but the key is required.
+  github_token: 1.trusted
+identities:
+  cgr-pull:
+    description: Pull the org's catalog images from cgr.dev for the registry checks.
+    ring: 1.trusted
+    checks:
+      - repo.checks.catalog-exists
+      - repo.checks.cve-scan
+    audiences: [https://issuer.enforce.dev]
+    chainguard:
+      cgr.dev:
+        identity: 834556885ebd02f51dc11f57b826ec01ed24d377/e525745031ff5212
+        exchange_audience: https://issuer.enforce.dev
+        role: registry.pull
+        scopes: [834556885ebd02f51dc11f57b826ec01ed24d377]
+    allow:
+      - run: presubmit
+        target_ref: refs/heads/main
