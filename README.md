@@ -274,8 +274,8 @@ The offline pull-request checks also run on [Chainguard Checks](https://www.chai
 | Check | Runs when | Mirrors |
 | --- | --- | --- |
 | `lint` | every PR | `validate.yml`: actionlint, yamllint, configs parse |
-| `conftest` | `cgr-sync.yaml`, `custom-assembly/**` or `policy/**` change | the `conftest` job of `catalog-gate.yml` |
-| `goldenctl` | `goldenctl/**` or `custom-assembly/**` change; egress to the Go module proxy only | `goldenctl.yml`, plus `goldenctl overlay check` |
+| `conftest` | `cgr-sync.yaml`, `custom-assembly/**`, `policy/**` or `.chainguard/**` change | the `conftest` job of `catalog-gate.yml` |
+| `goldenctl` | `goldenctl/**`, `custom-assembly/**` or `.chainguard/**` change; egress to the Go module proxy (and its storage.googleapis.com downloads) only | `goldenctl.yml`, plus `goldenctl overlay check` |
 
 Results appear on the PR as **Chainguard Checks (presubmit)**. They run beside the Actions they mirror; once they agree, require the summary check in branch protection and retire those Actions. Checks that need the registry, Google Cloud or GitHub (the CVE scan, policy checks, mirroring, intake, sticky PR comments) stay on Actions: Checks get no GitHub token, and registry checks need a workload identity (`.chainguard/ci/identities.yaml`, a later step).
 
