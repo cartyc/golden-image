@@ -43,7 +43,8 @@ checks:
     when:
       changed: ["goldenctl/**", "custom-assembly/**"]
     network:
-      egress: [proxy.golang.org, sum.golang.org]
+      # proxy.golang.org redirects module zips to storage.googleapis.com.
+      egress: [proxy.golang.org, sum.golang.org, storage.googleapis.com]
     shell: bash
     script: |
       set -euo pipefail
