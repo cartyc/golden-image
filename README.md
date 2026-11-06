@@ -267,6 +267,22 @@ then gated promote to prod) for the canonical two-tier release control.
 | `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request — **scoped to the refs the PR changed**: `conftest` + `chainctl policies check` (ENFORCE denials fail, DRY_RUN warn) + `grype` CVE-count scan. Posts a sticky **gate-summary** comment and, on CVE failure, an itemized **CVE-details** comment. |
 | `policies.yml` | PR + merge on `registry-policies/**` or `library-policies/**` | Unified plan → gate → apply for **both** container pull policies (`registry-policies/`, incl. `bindings.yaml`) and Libraries policies (`library-policies/`): preview on PR, reconcile + prune on merge, gated by the `registry-admin` environment. |
 
+### Chainguard Checks and Workspaces (`.chainguard/`)
+
+The offline pull-request checks also run on [Chainguard Checks](https://www.chainguard.dev/docs/chainguard/checks/configuration), in hardened microVMs with no secrets, no identity, and no network unless a check lists hosts. They're defined in `.chainguard/ci/repo.yaml`:
+
+| Check | Runs when | Mirrors |
+| --- | --- | --- |
+| `lint` | every PR | `validate.yml`: actionlint, yamllint, configs parse |
+| `conftest` | `cgr-sync.yaml`, `custom-assembly/**` or `policy/**` change | the `conftest` job of `catalog-gate.yml` |
+| `goldenctl` | `goldenctl/**` or `custom-assembly/**` change; egress to the Go module proxy only | `goldenctl.yml`, plus `goldenctl overlay check` |
+
+Results appear on the PR as **Chainguard Checks (presubmit)**. They run beside the Actions they mirror; once they agree, require the summary check in branch protection and retire those Actions. Checks that need the registry, Google Cloud or GitHub (the CVE scan, policy checks, mirroring, intake, sticky PR comments) stay on Actions: Checks get no GitHub token, and registry checks need a workload identity (`.chainguard/ci/identities.yaml`, a later step).
+
+`chainctl checks validate .` checks the file offline; `chainctl checks run --check lint --watch` runs a pushed commit as an advisory run.
+
+**Workspaces.** `.chainguard/develop.yaml` gives a [Chainguard Workspaces](https://www.chainguard.dev/docs/chainguard/workspaces/) session the same environment plus `git`, `gh`, `crane`, `cosign`, `grype` and Claude Code: `chainctl develop --parent <your-org>`. A session carries your own `cgr.dev` and Chainguard credentials, so a platform engineer or agent can work an image request end to end: parse it, edit the catalog or overlays, run `goldenctl catalog verify`, `MODE=plan goldenctl overlay reconcile` and grype against `cgr.dev`, then open the PR. Nothing in a session changes the org; merging does, through Actions.
+
 ## Required secrets
 
 | Secret | Used by |

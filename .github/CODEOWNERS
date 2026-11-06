@@ -8,3 +8,4 @@
 /registry-policies/          @your-org/platform-engineering
 /policy/                     @your-org/platform-engineering
 /.github/workflows/          @your-org/platform-engineering
+/.chainguard/                 @your-org/platform-engineering

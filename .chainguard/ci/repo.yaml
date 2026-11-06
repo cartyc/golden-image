@@ -1,0 +1,55 @@
+version: 1
+# Chainguard Checks: the offline pull-request checks, in hardened microVMs with
+# no network unless a check lists hosts, and no secrets or identity. They run
+# beside the GitHub Actions they mirror (validate.yml, goldenctl.yml and the
+# conftest job of catalog-gate.yml) until the results match; then those
+# Actions can go. Checks that need the registry or GitHub stay on Actions.
+#   chainctl checks validate .                  check this file offline
+#   chainctl checks run --check lint --watch    run a pushed commit, advisory
+environment:
+  packages:
+    - bash
+    - coreutils
+    - findutils
+    - actionlint
+    - yamllint
+    - yq
+    - conftest
+    - go-1.26
+checks:
+  lint:
+    description: actionlint, yamllint, and every config parses
+    shell: bash
+    script: |
+      set -euo pipefail
+      actionlint -color
+      yamllint -d relaxed .github/ cgr-sync.yaml custom-assembly/
+      find custom-assembly -name '*.yaml' -print0 | xargs -0 -n1 yq -e '.' >/dev/null
+      yq -e '.' cgr-sync.yaml >/dev/null
+      echo "configs parse"
+
+  conftest:
+    description: the catalog and Custom Assembly overlays are within policy
+    when:
+      changed: ["cgr-sync.yaml", "custom-assembly/**", "policy/**"]
+    shell: bash
+    script: |
+      set -euo pipefail
+      conftest test --policy policy/conftest --all-namespaces cgr-sync.yaml
+      conftest test --policy policy/conftest --all-namespaces custom-assembly/overlays/*.yaml
+
+  goldenctl:
+    description: go vet, test and build, then the offline overlay check
+    when:
+      changed: ["goldenctl/**", "custom-assembly/**"]
+    network:
+      egress: [proxy.golang.org, sum.golang.org]
+    shell: bash
+    script: |
+      set -euo pipefail
+      cd goldenctl
+      go vet ./...
+      go test ./...
+      go build -o /tmp/goldenctl .
+      cd ..
+      /tmp/goldenctl overlay check
