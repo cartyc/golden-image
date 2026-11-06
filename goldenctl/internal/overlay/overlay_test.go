@@ -361,3 +361,58 @@ func TestMissingRepoIsReportedNotFatal(t *testing.T) {
 		}
 	}
 }
+
+// Moving all.yaml + python.yaml into golden-base + custom-python bindings
+// must compare equal; editing an overlay must not.
+func TestEffectiveAcrossLayouts(t *testing.T) {
+	head, headGroup, err := Effective(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(legacy, Dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for from, to := range map[string]string{"golden-base": "all", "custom-python": "python", "custom-jdk": "jdk"} {
+		b, err := os.ReadFile(filepath.Join(repoRoot, OverlaysDir, from+".yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(legacy, Dir, to+".yaml"), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base, baseGroup, err := Effective(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []string{"custom-python", "custom-jdk"} {
+		if head[r] == "" || head[r] != base[r] {
+			t.Errorf("%s: layouts should match:\n head %s\n base %s", r, head[r], base[r])
+		}
+	}
+	if headGroup != baseGroup {
+		t.Errorf("no group bindings on either side: %q vs %q", headGroup, baseGroup)
+	}
+
+	edited := writeTree(t, map[string]string{
+		"golden-base":   "environment: {LANG: fr_CA.UTF-8}\n",
+		"custom-python": "contents:\n  packages: [bash, curl, jq]\n",
+	}, "bindings:\n  - {overlay: golden-base, scope: {repos: [custom-python]}}\n  - {overlay: custom-python, scope: {repos: [custom-python]}}\n")
+	e1, _, _ := Effective(edited)
+	os.WriteFile(filepath.Join(edited, OverlaysDir, "custom-python.yaml"), []byte("contents:\n  packages: [bash, curl]\n"), 0o644)
+	e2, _, _ := Effective(edited)
+	if e1["custom-python"] == e2["custom-python"] {
+		t.Error("a package change must change the effective config")
+	}
+	os.WriteFile(filepath.Join(edited, BindingsFile), []byte("bindings:\n  - {overlay: golden-base, scope: {repos: [custom-python]}}\n  - {overlay: custom-python, scope: {repos: [custom-python]}, tags: dev}\n"), 0o644)
+	e3, _, _ := Effective(edited)
+	if e3["custom-python"] == e2["custom-python"] {
+		t.Error("a selector change must change the effective config")
+	}
+	os.WriteFile(filepath.Join(edited, BindingsFile), []byte("bindings:\n  - {overlay: golden-base, scope: {folder: golden-images}}\n  - {overlay: custom-python, scope: {repos: [custom-python]}}\n"), 0o644)
+	_, g4, _ := Effective(edited)
+	if g4 == baseGroup {
+		t.Error("a folder binding must change the group summary")
+	}
+}

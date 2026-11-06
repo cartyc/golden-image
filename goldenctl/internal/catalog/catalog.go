@@ -296,36 +296,14 @@ func ChangedRefs(baseSHA, curSHA string) ([]string, error) {
 	if cur == "" {
 		cur = "HEAD"
 	}
-	// A changed overlay or binding re-gates the repos it reaches: those named
-	// in custom-assembly/bindings.yaml, or every custom-* repo for a folder or
-	// organization scope (which reaches repos the file doesn't name).
+	// Custom Assembly: re-gate a custom repo only when what custom-assembly/
+	// does to it changed between base and head, so moving or reorganizing
+	// files that merge to the same config doesn't re-scan unchanged images.
+	// Folder/org bindings reach repos the files don't name, so a change to
+	// those re-gates every custom-* repo, as does anything unreadable.
 	out, _ := exec.Command("git", "diff", "--name-only", baseSHA, cur, "--", OverlayDir+"/").Output()
 	if strings.TrimSpace(string(out)) != "" {
-		affected := map[string]bool{}
-		allCustom := false
-		if spec, err := overlay.Load("."); err == nil {
-			for _, p := range strings.Fields(string(out)) {
-				name := strings.TrimSuffix(p[strings.LastIndex(p, "/")+1:], ".yaml")
-				if p == overlay.BindingsFile {
-					for _, r := range spec.Repos() {
-						affected[r] = true
-					}
-					allCustom = allCustom || spec.HasGroupScope()
-					continue
-				}
-				for _, b := range spec.Bindings {
-					if b.Overlay != name {
-						continue
-					}
-					for _, r := range b.Scope.Repos {
-						affected[r] = true
-					}
-					allCustom = allCustom || b.Scope.Org || b.Scope.Folder != ""
-				}
-			}
-		} else {
-			allCustom = true // can't read the change; gate every custom repo
-		}
+		affected, allCustom := overlayChanges(baseSHA)
 		for _, r := range head {
 			if affected[repoOf(r)] || (allCustom && strings.HasPrefix(repoOf(r), "custom-")) {
 				changed[r] = true
@@ -339,4 +317,41 @@ func ChangedRefs(baseSHA, curSHA string) ([]string, error) {
 	}
 	sort.Strings(res)
 	return res, nil
+}
+
+// overlayChanges compares the effective Custom Assembly config of each repo
+// at baseSHA with the working tree (the PR head).
+func overlayChanges(baseSHA string) (affected map[string]bool, allCustom bool) {
+	headRepos, headGroup, err := overlay.Effective(".")
+	if err != nil {
+		return nil, true
+	}
+	dir, err := os.MkdirTemp("", "base-custom-assembly-")
+	if err != nil {
+		return nil, true
+	}
+	defer os.RemoveAll(dir)
+	baseRepos, baseGroup := map[string]string{}, ""
+	if tarball, err := exec.Command("git", "archive", baseSHA, "--", OverlayDir).Output(); err == nil {
+		untar := exec.Command("tar", "-x", "-C", dir)
+		untar.Stdin = strings.NewReader(string(tarball))
+		if err := untar.Run(); err != nil {
+			return nil, true
+		}
+		if baseRepos, baseGroup, err = overlay.Effective(dir); err != nil {
+			return nil, true
+		}
+	} // no custom-assembly/ at base: every head repo is new
+	affected = map[string]bool{}
+	for r, v := range headRepos {
+		if baseRepos[r] != v {
+			affected[r] = true
+		}
+	}
+	for r := range baseRepos {
+		if _, ok := headRepos[r]; !ok {
+			affected[r] = true
+		}
+	}
+	return affected, headGroup != baseGroup
 }
