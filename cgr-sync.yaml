@@ -43,16 +43,16 @@ repositories:
     tags:
       list: ["latest", "openjdk-21", "openjdk-21-dev"]
   # Custom Assembly variant (bash + curl + internal CA), built & signed by
-  # Chainguard from custom-assembly/python.yaml — inherits the verify policy
-  # above. Only mirrors once the image exists; run the one-time
+  # Chainguard from custom-assembly/overlays/ (golden-base + custom-python).
+  # Inherits the verify policy above. Only mirrors once the image exists; run the one-time
   # `chainctl image repo build edit --parent <your-org> --repo python --save-as custom-python`
   # bootstrap first.
   - name: custom-python
     tags:
       list: ["latest", "3.14"]
 
-  # Custom Assembly jdk variant from custom-assembly/jdk.yaml — same one-time
-  # bootstrap with `--repo jdk --save-as custom-jdk`.
+  # Custom Assembly jdk variant from custom-assembly/overlays/ (golden-base +
+  # custom-jdk). Same one-time bootstrap with `--repo jdk --save-as custom-jdk`.
   - name: custom-jdk
     tags:
       list: ["latest"]

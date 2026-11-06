@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cartyc/golden-image/goldenctl/internal/overlay"
 	"gopkg.in/yaml.v3"
 )
 
@@ -295,14 +296,38 @@ func ChangedRefs(baseSHA, curSHA string) ([]string, error) {
 	if cur == "" {
 		cur = "HEAD"
 	}
+	// A changed overlay or binding re-gates the repos it reaches: those named
+	// in custom-assembly/bindings.yaml, or every custom-* repo for a folder or
+	// organization scope (which reaches repos the file doesn't name).
 	out, _ := exec.Command("git", "diff", "--name-only", baseSHA, cur, "--", OverlayDir+"/").Output()
-	for _, p := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if p == "" {
-			continue
+	if strings.TrimSpace(string(out)) != "" {
+		affected := map[string]bool{}
+		allCustom := false
+		if spec, err := overlay.Load("."); err == nil {
+			for _, p := range strings.Fields(string(out)) {
+				name := strings.TrimSuffix(p[strings.LastIndex(p, "/")+1:], ".yaml")
+				if p == overlay.BindingsFile {
+					for _, r := range spec.Repos() {
+						affected[r] = true
+					}
+					allCustom = allCustom || spec.HasGroupScope()
+					continue
+				}
+				for _, b := range spec.Bindings {
+					if b.Overlay != name {
+						continue
+					}
+					for _, r := range b.Scope.Repos {
+						affected[r] = true
+					}
+					allCustom = allCustom || b.Scope.Org || b.Scope.Folder != ""
+				}
+			}
+		} else {
+			allCustom = true // can't read the change; gate every custom repo
 		}
-		base := strings.TrimSuffix(p[strings.LastIndex(p, "/")+1:], ".yaml")
 		for _, r := range head {
-			if repoOf(r) == "custom-"+base {
+			if affected[repoOf(r)] || (allCustom && strings.HasPrefix(repoOf(r), "custom-")) {
 				changed[r] = true
 			}
 		}

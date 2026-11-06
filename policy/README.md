@@ -9,13 +9,13 @@ well-formed and within policy before a platform reviewer approves it.
 | signatures verified before mirroring (`verify.enabled`) | `cgr-sync.yaml` |
 | sources are on `cgr.dev` (no arbitrary upstreams) | `cgr-sync.yaml` |
 | tags are pinned (not only `latest`) | `cgr-sync.yaml` |
-| packages come from the approved allowlist | `custom-assembly/*.yaml` |
-| runtime repositories are HTTPS | `custom-assembly/*.yaml` |
+| packages come from the approved allowlist | `custom-assembly/overlays/*.yaml` |
+| runtime repositories are HTTPS | `custom-assembly/overlays/*.yaml` |
 
 Run locally:
 
 ```sh
-conftest test --policy policy/conftest --all-namespaces cgr-sync.yaml custom-assembly/*.yaml
+conftest test --policy policy/conftest --all-namespaces cgr-sync.yaml custom-assembly/overlays/*.yaml
 ```
 
 Show a **denial** (great for a live demo):

@@ -156,8 +156,9 @@ func ScaffoldOverlay(r *Request) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Chainguard Custom Assembly overlay for %s (scaffolded from an image request).\n", r.Image)
-	b.WriteString("# Shared bits (internal CA, locale) live in custom-assembly/all.yaml and\n")
-	b.WriteString("# are merged in at apply time.\n")
+	b.WriteString("# Image-specific customizations only. The shared base layer (internal CA,\n")
+	b.WriteString("# locale) is custom-assembly/overlays/golden-base.yaml; bindings.yaml layers\n")
+	b.WriteString("# both onto the repo.\n")
 	fmt.Fprintf(&b, "# Requested customization: %s\n", shown)
 	b.WriteString("# TODO(platform-eng): review packages against the allowlist\n")
 	b.WriteString("# (policy/conftest/catalog.rego) and complete this overlay before merge.\n\n")

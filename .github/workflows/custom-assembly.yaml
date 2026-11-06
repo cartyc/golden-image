@@ -1,20 +1,27 @@
-name: Custom Assembly build
+name: Custom Assembly overlays
 
-# Build customized images (bash + curl, internal CA) via Chainguard Custom
-# Assembly — Chainguard assembles and signs them server-side from the overlays
-# in custom-assembly/. Replaces the docker-build-based pipelines.
+# Keep the organization's Custom Assembly Overlays and bindings in line with
+# custom-assembly/ (goldenctl overlay reconcile). Chainguard assembles, signs
+# and keeps rebuilding the customized images server-side.
 #
-# One-time bootstrap per image (the declarative `apply` cannot create an image,
-# and `--save-as` only works with `edit`). Pass --file so edit uses the overlay
-# instead of an interactive editor; the CI identity also needs the repo.update
-# capability. See the README "Prerequisites" section.
+#   custom-assembly/overlays/<name>.yaml  named, reusable customizations
+#                                         (golden-base = internal CA + locale)
+#   custom-assembly/bindings.yaml         which repos (or folder / whole org)
+#                                         and which tags each overlay applies to
 #
-#   chainctl image repo build edit --parent <your-org> --repo python \
-#     --file custom-assembly/python.yaml --save-as custom-python
-#   chainctl image repo build edit --parent <your-org> --repo jdk \
-#     --file custom-assembly/jdk.yaml    --save-as custom-jdk
+# Pull request: plan only (what would be created, updated, attached, detached).
+# Merge to main: apply after registry-admin approval, like the policies lane.
+# Daily: drift check that fails if the live state no longer matches the files.
 #
-# After that, this workflow keeps each custom image in sync with its overlay.
+# Repos still on standard Custom Assembly can't take bindings. For those the
+# reconciler merges their all-tags layers into one config and applies it with
+# `chainctl images repos build apply`, until Chainguard moves them to overlays.
+#
+# The CI identity needs registry.overlays.edit (the built-in editor role has
+# it) plus repo.update for the standard Custom Assembly repos.
+#
+# A new custom repo has to be created once before anything binds to it; the
+# plan prints the `chainctl images repos build edit ... --save-as` command.
 
 on:
   push:
@@ -26,90 +33,86 @@ on:
     branches: [main]
     paths:
       - custom-assembly/**
+      - goldenctl/internal/overlay/**
       - .github/workflows/custom-assembly.yaml
   schedule:
-    # Daily drift check — alert if a repo's live Custom Assembly config has
-    # drifted from the committed overlays (out-of-band edits via console/CLI).
     - cron: "30 5 * * *"
   workflow_dispatch: {}
 
 permissions: {}
 
-# Serialize real applies: pushes/dispatch/schedule on main share the main-ref
-# group so an apply and a drift check can't run at once. PR runs are grouped per
-# ref and cancel their own superseded runs.
 concurrency:
   group: custom-assembly-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  custom-assembly:
+  plan:
+    # Secrets aren't available to fork PRs; the offline `overlay check` in the
+    # validate workflow still covers them.
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write # assume the Chainguard identity
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - file: custom-assembly/python.yaml
-            repo: custom-python
-          - file: custom-assembly/jdk.yaml
-            repo: custom-jdk
     env:
-      PARENT: ${{ secrets.CHAINGUARD_ORG }}
+      CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+      MODE: plan
+      FAIL_ON_DRIFT: ${{ github.event_name == 'schedule' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
+      - uses: ./.github/actions/goldenctl
       - name: Auth to Chainguard
         uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
         with:
-          # Identity needs the repo.update permission for Custom Assembly builds.
           identity: ${{ secrets.CHAINGUARD_IDENTITY }}
-
-      # `apply --file` REPLACES a repo's whole config, so layer the shared
-      # overlay (custom-assembly/all.yaml — internal CA, locale, common env)
-      # with this image's specifics into one complete config. `*+` deep-merges
-      # maps and APPENDS arrays, so packages concatenate and per-image scalars
-      # win. yq is preinstalled on the GitHub-hosted runner.
-      - name: Merge shared overlay with ${{ matrix.repo }}
+      - name: Plan overlays and bindings
         run: |
-          yq eval-all 'select(fi==0) *+ select(fi==1)' \
-            custom-assembly/all.yaml "${{ matrix.file }}" > "$RUNNER_TEMP/merged.yaml"
-          echo "::group::effective config for ${{ matrix.repo }}"
-          cat "$RUNNER_TEMP/merged.yaml"
-          echo "::endgroup::"
+          set -o pipefail
+          goldenctl overlay reconcile | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # On PRs: preview the change, informational only. `apply --dry-run` exits
-      # non-zero whenever config WOULD change — the normal case for a PR that
-      # edits an overlay — so don't gate on it; just surface the diff. The real
-      # apply runs on merge. Skip on fork PRs: secrets/OIDC aren't available
-      # there, so the assume would fail anyway.
-      - name: Preview ${{ matrix.repo }} (diff)
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          if chainctl images repos build apply \
-               --file "$RUNNER_TEMP/merged.yaml" \
-               --parent "$PARENT" --repo "${{ matrix.repo }}" --dry-run; then
-            echo "${{ matrix.repo }}: no pending changes"
-          else
-            echo "::notice::${{ matrix.repo }}: merging this PR will update its live Custom Assembly config (diff above)"
-          fi
+  gate:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: registry-admin
+    permissions: {}
+    steps:
+      - name: Awaiting approval
+        run: echo "Approved — proceeding to apply."
 
-      # Scheduled: drift detection only — fail (don't apply) if the live config
-      # has drifted from the committed overlays. `apply --dry-run` exits non-zero
-      # when changes would apply, which is exactly the drift signal here.
-      - name: Drift check ${{ matrix.repo }} (scheduled)
-        if: github.event_name == 'schedule'
+  apply:
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
+      MODE: apply
+      # Overlay files deleted by this push are detached and deleted.
+      PREV_SHA: ${{ github.event.before }}
+      CUR_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/goldenctl
+      - name: Auth to Chainguard
+        uses: chainguard-dev/setup-chainctl@2cddd35a2f120d9973e58094dc6878c93cf58c28 # v0.5.1
+        with:
+          identity: ${{ secrets.CHAINGUARD_IDENTITY }}
+      - name: Apply overlays and bindings
         run: |
-          chainctl images repos build apply \
-            --file "$RUNNER_TEMP/merged.yaml" \
-            --parent "$PARENT" --repo "${{ matrix.repo }}" --dry-run
-
-      # On main / manual dispatch: apply and trigger the build.
-      - name: Apply ${{ matrix.repo }} and build
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+          set -o pipefail
+          goldenctl overlay reconcile | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Builds started
         run: |
-          chainctl images repos build apply \
-            --file "$RUNNER_TEMP/merged.yaml" \
-            --parent "$PARENT" --repo "${{ matrix.repo }}" --yes
+          {
+            echo "### Recent Custom Assembly builds"
+            for repo in $(yq '.bindings[].scope.repos[]' custom-assembly/bindings.yaml | sort -u); do
+              echo "#### ${repo}"
+              echo '```'
+              chainctl images repos build list --repo "$repo" --parent "$CHAINGUARD_ORG" 2>&1 | head -8 || true
+              echo '```'
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"

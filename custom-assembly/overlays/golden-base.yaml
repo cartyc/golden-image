@@ -1,9 +1,10 @@
-# Shared Custom Assembly overlay — customizations common to EVERY golden custom
-# image, kept in one place instead of repeated per image. The build workflow
-# merges this with each per-image overlay (custom-assembly/<repo>.yaml) before
-# applying, so a repo ends up with these common bits PLUS its own specifics.
+# Base layer for every golden custom image: French Canadian locale + the
+# internal CA. custom-assembly/bindings.yaml binds it under each image's own
+# overlay (custom-assembly/overlays/<repo>.yaml), so a repo gets these common
+# bits PLUS its own; on a clash the image's own overlay wins.
 #
-# Currently applies: French Canadian locale + the internal CA.
+# This is a Custom Assembly Overlay: a named, reusable customization.
+# Chainguard rebuilds every tag it's bound to when it changes.
 
 contents:
   # French Canadian locale support — glibc-locale-fr provides fr_CA.UTF-8

@@ -1,0 +1,17 @@
+# Overlay for the golden python image (custom-python).
+#
+# Image-specific customizations only. The shared base layer (internal CA,
+# locale) is custom-assembly/overlays/golden-base.yaml; bindings.yaml layers
+# both onto custom-python.
+# Reconciled by .github/workflows/custom-assembly.yaml
+# (goldenctl overlay reconcile).
+
+contents:
+  # Additional packages baked into the image (from your entitled repos).
+  packages:
+    - bash
+    - curl
+
+annotations:
+  # Preserves the `LABEL origin="chainguard"` from the old Dockerfile.
+  origin: chainguard

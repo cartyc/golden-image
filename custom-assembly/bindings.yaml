@@ -1,0 +1,40 @@
+# Where each Custom Assembly overlay (custom-assembly/overlays/<name>.yaml)
+# applies. Reconciled by .github/workflows/custom-assembly.yaml with
+# `goldenctl overlay reconcile`: a plan on pull requests, applied on merge
+# after registry-admin approval. Bindings removed here are detached.
+#
+#   scope:
+#     repos: [a, b]   one binding per repo
+#     folder: <path>  one binding for every repo in <org>/<path>, including
+#                     repos created there later
+#     org: true       one binding for every repo in the organization
+#   tags:
+#     all             every tag (the default)
+#     dev             every -dev tag, including future ones
+#     [3.13, 3.13-dev]  exactly these tags
+#
+# Layering: organization, then folder, then the repo's own bindings; within
+# each, all tags, then dev, then exact tags. The more specific layer wins on
+# environment variables, annotations and named certificates; packages add up.
+#
+# Repos still on standard Custom Assembly can't take bindings. For those the
+# reconciler merges their all-tags layers into one config and applies that
+# instead, until Chainguard moves the repo to overlays.
+bindings:
+  # Base layer: internal CA + fr_CA locale for every golden custom image.
+  # Once the custom repos live in a golden-images folder, replace the repos
+  # list with `folder: golden-images` so new custom repos get it automatically.
+  - overlay: golden-base
+    scope:
+      repos: [custom-python, custom-jdk]
+    tags: all
+
+  # Per-image layer.
+  - overlay: custom-python
+    scope:
+      repos: [custom-python]
+    tags: all
+  - overlay: custom-jdk
+    scope:
+      repos: [custom-jdk]
+    tags: all

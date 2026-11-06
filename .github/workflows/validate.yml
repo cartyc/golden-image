@@ -3,7 +3,8 @@ name: validate
 # Lint the workflows and configs on every PR and push to main:
 #   - actionlint  : GitHub Actions syntax + expressions (+ shellcheck on run:)
 #   - yamllint    : YAML hygiene incl. duplicate keys
-#   - config check: cgr-sync.yaml / custom-assembly overlays parse
+#   - config check: cgr-sync.yaml / custom-assembly overlays parse, and the
+#     overlays + bindings are consistent (goldenctl overlay check, offline)
 #     (the goldenctl helpers are built + tested by the goldenctl workflow)
 
 on:
@@ -34,7 +35,12 @@ jobs:
         run: |
           python3 - <<'PY'
           import glob, yaml
-          for f in sorted(glob.glob("custom-assembly/*.yaml")) + ["cgr-sync.yaml"]:
+          for f in sorted(glob.glob("custom-assembly/**/*.yaml", recursive=True)) + ["cgr-sync.yaml"]:
               yaml.safe_load(open(f))
               print("parsed", f)
           PY
+
+      - uses: ./.github/actions/goldenctl
+
+      - name: Overlays and bindings are consistent
+        run: goldenctl overlay check

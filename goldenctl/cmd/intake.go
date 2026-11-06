@@ -38,7 +38,7 @@ func init() {
 	var reqFile, outFile string
 	overlay := &cobra.Command{
 		Use:   "overlay",
-		Short: "Scaffold a custom-assembly/<image>.yaml stub from a parsed request",
+		Short: "Scaffold a custom-assembly/overlays/<repo>.yaml stub from a parsed request",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			var data []byte
 			var err error

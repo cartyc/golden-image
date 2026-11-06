@@ -33,7 +33,7 @@ jobs:
       - name: Policy-check the catalog + overlays
         run: |
           conftest test --policy policy/conftest --all-namespaces cgr-sync.yaml
-          conftest test --policy policy/conftest --all-namespaces custom-assembly/*.yaml
+          conftest test --policy policy/conftest --all-namespaces custom-assembly/overlays/*.yaml
 
   policies-check:
     runs-on: ubuntu-latest

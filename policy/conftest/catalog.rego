@@ -1,6 +1,6 @@
 # Repo-side policy gate for golden-image change REQUESTS, run by conftest in the
 # catalog-gate workflow. It validates the catalog config itself (cgr-sync.yaml)
-# and the Custom Assembly overlays (custom-assembly/*.yaml) — the "is this
+# and the Custom Assembly overlays (custom-assembly/overlays/*.yaml) — the "is this
 # request well-formed and within policy?" check that a platform reviewer would
 # otherwise do by hand. This is complementary to the REGISTRY pull policies in
 # ../../registry-policies (which Chainguard enforces at pull time).
@@ -52,7 +52,7 @@ warn contains msg if {
 	msg := sprintf("cgr-sync: repo %q pins only \"latest\" — prefer a version tag where the repo has one", [repo.name])
 }
 
-# --- Custom Assembly overlays (custom-assembly/*.yaml) -----------------------
+# --- Custom Assembly overlays (custom-assembly/overlays/*.yaml) --------------
 
 # Only approved packages may be baked into a golden custom image.
 deny contains msg if {
