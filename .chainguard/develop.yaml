@@ -1,0 +1,20 @@
+version: 1
+# Chainguard Workspaces sessions for platform engineers and agents: the Checks
+# environment (.chainguard/ci/repo.yaml) plus registry and GitHub tooling.
+#   chainctl develop --parent <your-org>    open a session on this repository
+# A session carries your own cgr.dev and Chainguard credentials, so
+# `goldenctl catalog verify`, `goldenctl overlay reconcile` (MODE=plan), grype
+# on cgr.dev images and `chainctl policies check` work there directly. Nothing
+# in a session applies changes to the org: merging does, through Actions.
+from: .chainguard/ci/repo.yaml
+environment:
+  packages:
+    - git
+    - gh
+    - jq
+    - curl
+    - crane
+    - cosign
+    - grype
+    - claude
+resources: {cpus: 4, memory: 8Gi, disk: 20Gi}
