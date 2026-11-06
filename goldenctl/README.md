@@ -17,6 +17,10 @@ goldenctl intake overlay [--req req.json] [--out P] # scaffold a Custom Assembly
 goldenctl gate policies                            # ENFORCE denials fail, DRY_RUN warn (refs on stdin)
 goldenctl gate cve                                 # grype CVE-count gate (refs on stdin)
 goldenctl policy reconcile|bindings|libraries      # reconcile policies (env: MODE, CHAINGUARD_ORG, PREV_SHA, CUR_SHA)
+goldenctl overlay check                            # validate custom-assembly/ overlays + bindings (offline)
+goldenctl overlay reconcile                        # plan/apply overlays + bindings (env: MODE, CHAINGUARD_ORG, PREV_SHA, CUR_SHA, FAIL_ON_DRIFT)
+goldenctl overlay render --repo R [--folder F]     # merged all-tags config a repo gets
+goldenctl overlay bind --repo R [--base golden-base] # add a repo + its own overlay to bindings.yaml
 goldenctl dashboard [--mock] [--out P]             # render the Pages status page (env: CHAINGUARD_ORG, GITHUB_REPOSITORY, OUT)
 ```
 

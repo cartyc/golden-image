@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cartyc/golden-image/goldenctl/internal/overlay"
 	"gopkg.in/yaml.v3"
 )
 
@@ -295,14 +296,16 @@ func ChangedRefs(baseSHA, curSHA string) ([]string, error) {
 	if cur == "" {
 		cur = "HEAD"
 	}
+	// Custom Assembly: re-gate a custom repo only when what custom-assembly/
+	// does to it changed between base and head, so moving or reorganizing
+	// files that merge to the same config doesn't re-scan unchanged images.
+	// Folder/org bindings reach repos the files don't name, so a change to
+	// those re-gates every custom-* repo, as does anything unreadable.
 	out, _ := exec.Command("git", "diff", "--name-only", baseSHA, cur, "--", OverlayDir+"/").Output()
-	for _, p := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if p == "" {
-			continue
-		}
-		base := strings.TrimSuffix(p[strings.LastIndex(p, "/")+1:], ".yaml")
+	if strings.TrimSpace(string(out)) != "" {
+		affected, allCustom := overlayChanges(baseSHA)
 		for _, r := range head {
-			if repoOf(r) == "custom-"+base {
+			if affected[repoOf(r)] || (allCustom && strings.HasPrefix(repoOf(r), "custom-")) {
 				changed[r] = true
 			}
 		}
@@ -314,4 +317,41 @@ func ChangedRefs(baseSHA, curSHA string) ([]string, error) {
 	}
 	sort.Strings(res)
 	return res, nil
+}
+
+// overlayChanges compares the effective Custom Assembly config of each repo
+// at baseSHA with the working tree (the PR head).
+func overlayChanges(baseSHA string) (affected map[string]bool, allCustom bool) {
+	headRepos, headGroup, err := overlay.Effective(".")
+	if err != nil {
+		return nil, true
+	}
+	dir, err := os.MkdirTemp("", "base-custom-assembly-")
+	if err != nil {
+		return nil, true
+	}
+	defer os.RemoveAll(dir)
+	baseRepos, baseGroup := map[string]string{}, ""
+	if tarball, err := exec.Command("git", "archive", baseSHA, "--", OverlayDir).Output(); err == nil {
+		untar := exec.Command("tar", "-x", "-C", dir)
+		untar.Stdin = strings.NewReader(string(tarball))
+		if err := untar.Run(); err != nil {
+			return nil, true
+		}
+		if baseRepos, baseGroup, err = overlay.Effective(dir); err != nil {
+			return nil, true
+		}
+	} // no custom-assembly/ at base: every head repo is new
+	affected = map[string]bool{}
+	for r, v := range headRepos {
+		if baseRepos[r] != v {
+			affected[r] = true
+		}
+	}
+	for r := range baseRepos {
+		if _, ok := headRepos[r]; !ok {
+			affected[r] = true
+		}
+	}
+	return affected, headGroup != baseGroup
 }

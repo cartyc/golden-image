@@ -5,7 +5,7 @@
 - [Goals](#goals)
 - [Non-Goals](#non-goals)
 - [Pipeline overview](#pipeline-overview)
-  - [1. Custom Assembly — custom-assembly/*.yaml](#1-custom-assembly--custom-assemblyyaml)
+  - [1. Custom Assembly Overlays — custom-assembly/](#1-custom-assembly-overlays--custom-assembly)
   - [2. Pass-through lane — cgr-sync.yaml + .github/workflows/passthrough-mirror.yaml](#2-pass-through-lane--cgr-syncyaml--githubworkflowspassthrough-mirroryaml)
   - [Which lane?](#which-lane)
 - [Policy status dashboard](#policy-status-dashboard)
@@ -52,9 +52,9 @@ flowchart TB
   src[("cgr.dev<br/>Chainguard source")]
   gar[("Google Artifact Registry<br/>golden images")]
 
-  subgraph ca["Custom Assembly — custom-assembly/*.yaml"]
+  subgraph ca["Custom Assembly Overlays — custom-assembly/"]
     direction TB
-    cfg["apko overlay<br/>packages · cert · annotations"] --> apply["chainctl build apply"]
+    cfg["overlays + bindings<br/>golden-base · per-image · per-tag"] --> apply["goldenctl overlay reconcile"]
     apply --> built["Chainguard builds + signs<br/>custom-python"]
   end
 
@@ -69,9 +69,9 @@ flowchart TB
   cs --> gar
 ```
 
-### 1. Custom Assembly — `custom-assembly/*.yaml`
+### 1. Custom Assembly Overlays — `custom-assembly/`
 
-For images that need modification (extra packages, certificates, annotations). Chainguard assembles and **signs** the customized image server-side from an apko overlay — there's no derived Dockerfile to maintain, and the customization is captured in the image's provenance. See the [Custom Assembly](#custom-assembly-custom-assembly) section below.
+For images that need modification (extra packages, certificates, annotations). Chainguard assembles and **signs** the customized image server-side from **overlays**: a shared base layer, a per-image layer, and optional per-tag layers (for example `-dev` only) — there's no derived Dockerfile to maintain, and the customization is captured in the image's provenance. See the [Custom Assembly](#custom-assembly-custom-assembly) section below.
 
 ### 2. Pass-through lane — `cgr-sync.yaml` + `.github/workflows/passthrough-mirror.yaml`
 
@@ -143,7 +143,7 @@ A team opens a **Golden image request** issue (`.github/ISSUE_TEMPLATE/image-req
 reviews and adds the **`approved`** label; the **Image request intake** workflow
 (`.github/workflows/image-request-intake.yml`) then parses the form, appends the
 `cgr-sync.yaml` entry (and, for the Custom Assembly lane, scaffolds a
-`custom-assembly/<image>.yaml` overlay stub), opens the PR `Closes`-ing the
+`custom-assembly/overlays/<repo>.yaml` overlay stub and binds it), opens the PR `Closes`-ing the
 issue, and comments the PR link back — so **no one hand-edits YAML**. Prefer to
 author the PR yourself? `goldenctl catalog add --name <repo> --tags <t1,t2>`
 appends a valid entry the same way.
@@ -246,10 +246,11 @@ then gated promote to prod) for the canonical two-tier release control.
 | Path | What it is | How you use it |
 | --- | --- | --- |
 | `cgr-sync.yaml` | The **pass-through catalog** — which images/tags get mirrored as-is from `cgr.dev` into Artifact Registry, plus the signature-verify policy. | Add or remove an image by editing the `repositories:` list (one entry = a repo + its tags); shared `defaults:` cover source, destination, and verify. `${VAR}` placeholders are filled from the workflow's secrets at run time. |
-| `custom-assembly/` | Chainguard **Custom Assembly** overlays — declarative, server-side image customizations (apko). | See the table rows below; the build workflow merges the base with each per-image overlay and applies the result. |
-| &nbsp;&nbsp;`custom-assembly/all.yaml` | The **base** overlay, merged into **every** custom image. | Put things that should apply everywhere here — common packages, env vars, annotations, and the internal CA. Edit this to change all custom images at once. |
-| &nbsp;&nbsp;`custom-assembly/<image>.yaml` | A **per-image** overlay (e.g. `python.yaml`, `jdk.yaml`). | Image-specific packages/config, layered on top of `all.yaml`. The filename maps to a target repo in the build workflow's matrix; to customize one image, edit its file. |
-| `goldenctl/` | The **Go CLI** the CI calls for all catalog / intake / gate / policy / dashboard helpers (one binary, unit-tested). | Subcommands: `catalog refs\|changed\|add\|verify\|golden-images`, `intake parse\|overlay`, `gate policies\|cve`, `policy reconcile\|bindings\|libraries`, `dashboard`. Built per-job with `setup-go`; see `goldenctl/README.md`. |
+| `custom-assembly/` | Chainguard **Custom Assembly Overlays**: named, reusable server-side image customizations and where they bind. | See the rows below; `goldenctl overlay reconcile` keeps the organization in line with them. |
+| &nbsp;&nbsp;`custom-assembly/overlays/golden-base.yaml` | The **base layer** (internal CA, locale), bound to every golden custom image. | Edit this to change all custom images at once. |
+| &nbsp;&nbsp;`custom-assembly/overlays/<repo>.yaml` | A **per-image layer** (e.g. `custom-python.yaml`). | Image-specific packages/config, layered on top of `golden-base`. |
+| &nbsp;&nbsp;`custom-assembly/bindings.yaml` | Which repos (or folder, or whole org) and which tags (`all`, `dev`, exact) get each overlay. | Add a binding to apply an overlay somewhere; remove one to detach it. |
+| `goldenctl/` | The **Go CLI** the CI calls for all catalog / intake / gate / policy / dashboard helpers (one binary, unit-tested). | Subcommands: `catalog refs\|changed\|add\|verify\|golden-images`, `intake parse\|overlay`, `gate policies\|cve`, `policy reconcile\|bindings\|libraries`, `overlay check\|reconcile\|render\|bind`, `dashboard`. Built per-job with `setup-go`; see `goldenctl/README.md`. |
 | `.github/workflows/` | The CI lanes (see the next table). | — |
 | `LICENSE` | Apache-2.0. | — |
 
@@ -258,11 +259,11 @@ then gated promote to prod) for the canonical two-tier release control.
 | Workflow | Triggers | What it does |
 | --- | --- | --- |
 | `passthrough-mirror.yaml` | schedule (6h) + manual | Mirrors the `cgr-sync.yaml` catalog into Artifact Registry with `cgr-sync` (verify-before-mirror, signatures/attestations preserved), then independently verifies each landed image (grype CVE gate + cosign SBOM attestation). |
-| `custom-assembly.yaml` | PR/push on `custom-assembly/**` + manual | Merges `all.yaml` with each per-image overlay and applies it via `chainctl` so Chainguard builds + signs the custom image — `--dry-run` preview on PRs, real apply on merge to `main`. |
+| `custom-assembly.yaml` | PR/push on `custom-assembly/**`, daily, manual | `goldenctl overlay reconcile`: plan on PRs; on merge (after `registry-admin` approval) creates/updates overlays and attaches, re-scopes or detaches bindings, so Chainguard builds and signs the custom images. Repos still on standard Custom Assembly get the merged layers via `chainctl images repos build apply`. Daily drift check. |
 | `validate.yml` | every PR + push to `main` | Lints the workflows and configs (`actionlint`, `yamllint`) and confirms `cgr-sync.yaml` / overlays parse. |
 | `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
 | `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
-| `image-request-intake.yml` | issue labeled `approved` | Turns an approved **image-request** issue into a ready-to-review PR: parses the form, appends the `cgr-sync.yaml` entry (+ scaffolds a `custom-assembly/<image>.yaml` stub for the Custom Assembly lane), opens the PR, and comments the link on the issue. |
+| `image-request-intake.yml` | issue labeled `approved` | Turns an approved **image-request** issue into a ready-to-review PR: parses the form, appends the `cgr-sync.yaml` entry (+ for the Custom Assembly lane, scaffolds `custom-assembly/overlays/<repo>.yaml` and binds it with `golden-base`), opens the PR, and comments the link on the issue. |
 | `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request — **scoped to the refs the PR changed**: `conftest` + `chainctl policies check` (ENFORCE denials fail, DRY_RUN warn) + `grype` CVE-count scan. Posts a sticky **gate-summary** comment and, on CVE failure, an itemized **CVE-details** comment. |
 | `policies.yml` | PR + merge on `registry-policies/**` or `library-policies/**` | Unified plan → gate → apply for **both** container pull policies (`registry-policies/`, incl. `bindings.yaml`) and Libraries policies (`library-policies/`): preview on PR, reconcile + prune on merge, gated by the `registry-admin` environment. |
 
@@ -291,37 +292,54 @@ _The docker-build "transform" lane (build → grype → sign → chps → incert
 
 ## Custom Assembly (`custom-assembly/`)
 
-Some customizations are better done **server-side** with [Chainguard Custom Assembly](https://edu.chainguard.dev/chainguard/chainguard-images/features/ca-docs/custom-assembly/): Chainguard assembles and signs the customized image for you, so there's no derived Dockerfile to maintain and the change is recorded in the image's provenance.
+Some customizations are better done **server-side** with [Chainguard Custom Assembly](https://www.chainguard.dev/docs/chainguard/containers/custom-assembly/overlays/overview): Chainguard assembles and signs the customized image for you, so there's no derived Dockerfile to maintain and the change is recorded in the image's provenance.
 
-`custom-assembly/python.yaml` (and `custom-assembly/jdk.yaml`) hold each image's **specific** packages (`bash`, `curl`), while `custom-assembly/all.yaml` holds the customizations common to **every** custom image (the internal CA, French Canadian locale `glibc-locale-fr` + `LANG`). Since `chainctl … apply --file` replaces a repo's whole config, `.github/workflows/custom-assembly.yaml` **merges `all.yaml` with each per-image overlay** (`yq '… *+ …'` — append arrays, per-image scalars win) and applies the merged result (a matrix over the images): `--dry-run` on PRs (drift preview), `apply --yes` on merge. To customize all images at once, edit `all.yaml`; for one image, edit its file.
+The repo uses **Custom Assembly Overlays** (beta): customizations are named, reusable **overlays**, and **bindings** say which repos and which tags get each one.
+
+| File | What it holds |
+| --- | --- |
+| `custom-assembly/overlays/golden-base.yaml` | The **base layer** for every golden custom image: the internal CA and the French Canadian locale (`glibc-locale-fr` + `LANG`). |
+| `custom-assembly/overlays/<repo>.yaml` | A **per-image layer**, such as `custom-python.yaml` (`bash`, `curl`, the `origin` annotation). |
+| `custom-assembly/bindings.yaml` | Where each overlay applies. The scope is named `repos`, a `folder` (every repo in it, including ones created later), or the whole `org`. The tags are `all`, `dev` (every `-dev` tag), or a list of exact tags. |
+
+Layers combine the way Chainguard combines them: organization, then folder, then the repo's own bindings; within each, all tags, then `-dev`, then exact tags. The more specific layer wins on environment variables, annotations and named certificates; packages add up. So a repo gets `golden-base` **plus** its own overlay, and its own wins on a clash.
+
+`.github/workflows/custom-assembly.yaml` runs **`goldenctl overlay reconcile`**:
+
+- **Pull request:** a plan in the job summary, listing what would be created, updated, attached, re-scoped or detached.
+- **Merge to `main`:** apply, after `registry-admin` approval (as for policies). It creates or updates an overlay only when its content changed, because every overlay update rebuilds every tag it's bound to. Bindings removed from `bindings.yaml` are detached, and overlay files deleted in the push are detached and deleted.
+- **Daily:** a drift check that fails if the live state no longer matches the files.
+
+`goldenctl overlay check` (offline, in `validate.yml`) catches unsupported fields, unknown overlays, double bindings and unbound overlays before review. `goldenctl overlay render --repo <repo>` prints what a repo gets from its all-tags layers.
+
+**Repos on standard Custom Assembly.** A repo can use standard Custom Assembly or overlays, not both, and `custom-python` and `custom-jdk` started on standard. Until the Chainguard account team moves a repo to overlays, the reconciler merges that repo's all-tags layers into one config and applies it with `chainctl images repos build apply`, so the same files drive it. After the move it switches to bindings on its own. The merged layers equal the configs those two repos are built with today, so adopting this layout rebuilds nothing.
+
+**Folder scope.** To give every golden repo the base layer without listing them, put the custom repos in a `golden-images` folder and change the `golden-base` binding to `scope: {folder: golden-images}`. New custom repos created in that folder then get it automatically. Ask your account team about placing repos in a folder.
 
 ### Prerequisites
 
-Before the `custom-assembly` workflow can run, complete these one-time setup steps — skipping them produces the two failures we hit on first run (`missing: repo.update` and `no repo instance found`):
+Complete these once:
 
-1. **Grant the CI identity `repo.update`.** The assumable identity in `CHAINGUARD_IDENTITY` needs the `repo.update` capability, or `apply` fails with `[PermissionDenied] ... missing: repo.update`. Bind a role that includes it to the identity, e.g.:
+1. **Grant the CI identity the right capabilities.** The assumable identity in `CHAINGUARD_IDENTITY` needs `registry.overlays.edit` (the built-in `editor` role has it). For repos still on standard Custom Assembly it also needs `repo.update`, or `apply` fails with `[PermissionDenied] ... missing: repo.update`. For example:
 
    ```sh
    chainctl iam role-bindings create \
-     --identity=$CHAINGUARD_IDENTITY --role=<role-with-repo.update> --group=<your-org>
+     --identity=$CHAINGUARD_IDENTITY --role=editor --group=<your-org>
    ```
 
-2. **Enable the custom-certificates Beta.** The overlays bundle an internal CA under `certificates:`; this Beta must be enabled for your org first — contact your Chainguard Customer Success team.
+2. **Enable the custom-certificates Beta.** `golden-base` bundles an internal CA under `certificates:`; this Beta must be enabled for your org first. Contact your Chainguard Customer Success team.
 
-3. **Bootstrap each custom image once.** The declarative `apply` can't *create* an image (`--save-as` only works with `edit`), so create them from the committed overlays. Pass `--file` so `edit` uses the overlay instead of opening an interactive editor (there's no `--yes`, so confirm the diff when prompted):
+3. **Create each custom image once.** Overlays customize existing repos, so a new custom repo has to be created from its source repo first (`--save-as` only works with `edit`). The plan prints the commands for any repo that's missing:
 
    ```sh
-   chainctl image repo build edit --parent <your-org> --repo python \
-     --file custom-assembly/python.yaml --save-as custom-python
-   chainctl image repo build edit --parent <your-org> --repo jdk \
-     --file custom-assembly/jdk.yaml    --save-as custom-jdk
+   goldenctl overlay render --repo custom-python > /tmp/custom-python.yaml
+   chainctl images repos build edit --parent <your-org> --repo python \
+     --file /tmp/custom-python.yaml --save-as custom-python
    ```
 
-   The certs are read from the overlay's inline `certificates.additional` block; alternatively supply them from a PEM file with `--with-certificates=<your-ca>.pem`.
+   A repo created this way starts on standard Custom Assembly. Ask the account team to move it to overlays, so it can take tag-specific bindings.
 
-After bootstrapping, the workflow keeps each custom image in sync with its overlay on every merge to `main`.
-
-The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguard — so the **pass-through lane** mirrors it to Artifact Registry like any other image (it's already wired into `cgr-sync.yaml`, with a verify policy scoped to the Custom Assembly signing identity). It only mirrors once the bootstrap above has created the image. The overlay also bundles the internal CA (defined inline in `custom-assembly/all.yaml`) into the system truststore (replacing incert).
+The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguard, so the **pass-through lane** mirrors it to Artifact Registry like any other image (it's in `cgr-sync.yaml`, with a verify policy scoped to the Custom Assembly signing identity). The base layer also bundles the internal CA into the system truststore (replacing incert), and into the Java truststore for JDK images.
 
 ## Runbook — common tasks
 
@@ -341,29 +359,43 @@ The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguar
 
 ### Customize **all** custom images
 
-Edit `custom-assembly/all.yaml` (the base merged into every custom image), open a PR. The `custom-assembly` job posts a per-image **diff** (informational); on merge it applies and Chainguard rebuilds each image.
+Edit `custom-assembly/overlays/golden-base.yaml` and open a PR. The `custom-assembly` plan shows the change; on merge it's applied and Chainguard rebuilds every tag the overlay is bound to.
 
 ### Customize **one** image
 
-Edit that image's `custom-assembly/<image>.yaml` (e.g. `python.yaml`). It's layered on top of `all.yaml` at apply time.
+Edit that image's `custom-assembly/overlays/<repo>.yaml` (e.g. `custom-python.yaml`). It layers on top of `golden-base`.
+
+### Customize only some tags
+
+Add an overlay file and bind it with a tag selector in `bindings.yaml`. For example, debugging tools on every `-dev` tag:
+
+```yaml
+# custom-assembly/overlays/debug-tools.yaml
+contents:
+  packages: [strace, gdb]
+```
+
+```yaml
+# custom-assembly/bindings.yaml
+  - overlay: debug-tools
+    scope:
+      repos: [custom-python]
+    tags: dev
+```
+
+Use `tags: [3.13, 3.13-dev]` for exact tags, and `py{{major}}.{{minor}}-<pkg>` package names to match each tag's Python version. Tag selectors other than `all` need the repo to be on overlays, not standard Custom Assembly; the plan says so if it isn't.
 
 ### Add a brand-new custom image
 
-1. **One-time bootstrap** (the declarative `apply` can't create an image):
-   ```sh
-   chainctl image repo build edit --parent <your-org> --repo <base-image> \
-     --file custom-assembly/<new>.yaml --save-as custom-<new>
-   ```
-2. Add a matrix entry in `custom-assembly.yaml` (`file:` + `repo:`).
-3. Add `custom-<new>` to `cgr-sync.yaml` so it gets mirrored to Artifact Registry.
+Use the image request form (Custom Assembly lane): intake scaffolds `custom-assembly/overlays/custom-<new>.yaml`, binds it and `golden-base` in `bindings.yaml` (`goldenctl overlay bind --repo custom-<new>`), and adds the `cgr-sync.yaml` entry. By hand, do the same three edits. Then create the repo once; the PR's plan prints the `chainctl images repos build edit ... --save-as custom-<new>` command.
 
 ### Rotate / replace the internal CA
 
-Replace the inlined PEM in `custom-assembly/all.yaml`, open a PR, merge. The next `custom-assembly` apply rebuilds every image with the new CA.
+Replace the inlined PEM in `custom-assembly/overlays/golden-base.yaml`, open a PR, merge. The apply updates the overlay and Chainguard rebuilds every bound image with the new CA.
 
 ### Change the locale (or other base env/packages)
 
-Edit `custom-assembly/all.yaml` — e.g. swap `glibc-locale-fr` / `LANG` for another locale package + value. Applies to all custom images on merge.
+Edit `custom-assembly/overlays/golden-base.yaml`, e.g. swap `glibc-locale-fr` / `LANG` for another locale package and value. It applies to all bound images on merge.
 
 ### Upgrade `cgr-sync`
 

@@ -5,7 +5,8 @@
 # Flow: a requester files the "Golden image request" issue form. A Platform
 # Engineer reviews and adds the `approved` label. This workflow then parses the
 # form, appends the cgr-sync.yaml entry (and, for the Custom Assembly lane,
-# scaffolds a custom-assembly/<image>.yaml overlay stub), opens a PR that
+# scaffolds a custom-assembly/overlays/<repo>.yaml overlay stub and binds it in
+# custom-assembly/bindings.yaml), opens a PR that
 # `Closes` the issue, and comments the PR link back on the issue. The normal
 # Catalog gate + CODEOWNERS review still apply to that PR. For the Pass-through
 # lane the bot also ARMS auto-merge (--auto --squash): the PR merges itself once
@@ -67,16 +68,19 @@ jobs:
         run: |
           set -euo pipefail
           name=$(jq -r .repo_name req.json)
-          image=$(jq -r .image req.json)
           tags=$(jq -r '.tags | join(",")' req.json)
           is_custom=$(jq -r .is_custom req.json)
 
           goldenctl catalog add --name "$name" --tags "$tags"
 
-          # Custom Assembly lane: scaffold an overlay stub if one doesn't exist.
-          overlay="custom-assembly/${image}.yaml"
-          if [ "$is_custom" = "true" ] && [ ! -f "$overlay" ]; then
-            goldenctl intake overlay --out "$overlay" --req req.json
+          # Custom Assembly lane: scaffold the repo's own overlay if it doesn't
+          # exist, and bind it plus the golden-base layer in bindings.yaml.
+          overlay="custom-assembly/overlays/${name}.yaml"
+          if [ "$is_custom" = "true" ]; then
+            if [ ! -f "$overlay" ]; then
+              goldenctl intake overlay --out "$overlay" --req req.json
+            fi
+            goldenctl overlay bind --repo "$name"
           fi
 
           # nothing changed? (idempotent re-approve) — stop cleanly
