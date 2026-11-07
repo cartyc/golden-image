@@ -1,9 +1,14 @@
 version: 1
-# Chainguard Checks: the offline pull-request checks, in hardened microVMs with
-# no network unless a check lists hosts, and no secrets or identity. They run
-# beside the GitHub Actions they mirror (validate.yml, goldenctl.yml and the
-# conftest job of catalog-gate.yml) until the results match; then those
-# Actions can go. Checks that need the registry or GitHub stay on Actions.
+# Chainguard Checks: the pull-request checks, in hardened microVMs with no
+# network unless a check lists hosts, and no secrets. They run beside the
+# GitHub Actions they mirror until the results match; then those Actions can go.
+#   lint, conftest, goldenctl   offline; validate.yml, goldenctl.yml and the
+#                               conftest job of catalog-gate.yml
+#   catalog-exists, cve-scan    on cgr.dev through the cgr-pull workload identity
+#                               (.chainguard/ci/identities.yaml); validate-catalog.yml
+#                               and the cve-scan job of catalog-gate.yml
+# Still on Actions: the policies-check job (it calls the Chainguard API) and the
+# sticky PR comments, because checks get no GitHub token.
 #   chainctl checks validate .                  check this file offline
 #   chainctl checks run --check lint --watch    run a pushed commit, advisory
 environment:
@@ -54,3 +59,56 @@ checks:
       go build -o /tmp/goldenctl .
       cd ..
       /tmp/goldenctl overlay check
+
+  catalog-exists:
+    description: every source image:tag in cgr-sync.yaml exists on cgr.dev
+    when:
+      changed: ["cgr-sync.yaml", ".chainguard/**"]
+    identity: cgr-pull
+    environment:
+      packages: [bash, go-1.26]
+    vars:
+      CHAINGUARD_ORG: chriscarty.com
+    network:
+      # Go modules to build goldenctl, then manifest HEADs on cgr.dev.
+      egress: [proxy.golang.org, sum.golang.org, storage.googleapis.com, cgr.dev]
+    shell: bash
+    script: |
+      set -euo pipefail
+      go build -C goldenctl -buildvcs=false -o /tmp/goldenctl .
+      /tmp/goldenctl catalog refs | /tmp/goldenctl catalog verify
+
+  cve-scan:
+    description: grype finds no Critical or High CVEs in the images this change adds
+    when:
+      changed: ["cgr-sync.yaml", "custom-assembly/**", ".chainguard/**"]
+    identity: cgr-pull
+    environment:
+      packages: [bash, coreutils, git, go-1.26, grype]
+    vars:
+      CHAINGUARD_ORG: chriscarty.com
+      MAX_CRITICAL: "0"
+      MAX_HIGH: "0"
+      # The VM is arm64; scan the amd64 images the Actions runner scans.
+      GRYPE_PLATFORM: linux/amd64
+      # No Docker daemon in the VM: pull straight from the registry.
+      GRYPE_DEFAULT_IMAGE_PULL_SOURCE: registry
+      GRYPE_CHECK_FOR_APP_UPDATE: "false"
+    network:
+      # Go modules; cgr.dev and the R2 host it redirects layer downloads to,
+      # listed exactly; and the grype database.
+      egress:
+        - proxy.golang.org
+        - sum.golang.org
+        - storage.googleapis.com
+        - cgr.dev
+        - 9236a389bd48b984df91adc1bc924620.r2.cloudflarestorage.com
+        - grype.anchore.io
+    timeout: 30m
+    shell: bash
+    script: |
+      set -euo pipefail
+      go build -C goldenctl -buildvcs=false -o /tmp/goldenctl .
+      # Only the refs this change adds, against the base the run merges into.
+      BASE_SHA="${CHAINGUARD_BASE_REVISION:-}" CUR_SHA=HEAD /tmp/goldenctl catalog changed \
+        | /tmp/goldenctl gate cve
