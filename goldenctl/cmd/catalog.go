@@ -100,6 +100,19 @@ func init() {
 	}
 	goldenImages.Flags().StringVar(&giFile, "file", catalog.File, "catalog file")
 
-	catalogCmd.AddCommand(refs, changed, add, verify, goldenImages)
+	guardFile := catalog.File
+	guard := &cobra.Command{
+		Use:   "guard",
+		Short: "Fail unless every ghcr.io destination package already exists and is private (run before mirroring)",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if code := catalog.Guard(guardFile); code != 0 {
+				os.Exit(code)
+			}
+			return nil
+		},
+	}
+	guard.Flags().StringVar(&guardFile, "file", catalog.File, "catalog file")
+
+	catalogCmd.AddCommand(refs, changed, add, verify, goldenImages, guard)
 	root.AddCommand(catalogCmd)
 }

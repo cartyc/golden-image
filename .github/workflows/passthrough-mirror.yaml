@@ -33,6 +33,9 @@ concurrency:
 jobs:
   mirror:
     runs-on: ubuntu-latest
+    outputs:
+      # "ok" once the guard passed, so verify only runs after a real mirror.
+      guard: ${{ steps.guard.outputs.result }}
     permissions:
       contents: read
       id-token: write # OIDC token for setup-chainctl (cgr.dev source auth)
@@ -66,6 +69,21 @@ jobs:
           echo "DEST_REGISTRY=${DEST_REGISTRY,,}" >> "$GITHUB_ENV"
           printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
+      - uses: ./.github/actions/goldenctl
+
+      # Push only to packages that already exist and are private. This
+      # repository is public, and a package a workflow creates with
+      # GITHUB_TOKEN inherits the repository's visibility, so letting the
+      # mirror create one would make it public, for good. The guard fails
+      # if any destination package is missing, public, or not granted to this
+      # repository; the packages are pre-created by hand (README: "Pre-create
+      # the golden packages").
+      - name: Guard — destination packages exist and are private
+        id: guard
+        run: |
+          goldenctl catalog guard
+          echo "result=ok" >> "$GITHUB_OUTPUT"
+
       # Pull the pinned cgr-sync release image and extract its binary, instead
       # of checking out the source and building it. The binary runs on the
       # runner so it reuses the host keychain (cgr.dev + ghcr.io auth above) and the
@@ -85,11 +103,12 @@ jobs:
 
   # Independently verify the golden images that landed in the golden registry:
   # a grype CVE scan (gate) plus a cosign SBOM-attestation check. Runs after the
-  # mirror regardless of its outcome (so images that did land are still checked);
-  # images not yet present (e.g. a pre-bootstrap custom-*) are skipped.
+  # mirror whatever its outcome (so images that did land are still checked), but
+  # only once the guard has passed. Every catalog ref must be present: a missing
+  # one fails, unless VERIFY_ALLOW_MISSING lists it (README: "Verify failures").
   verify:
     needs: mirror
-    if: ${{ always() }}
+    if: ${{ always() && needs.mirror.outputs.guard == 'ok' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -100,6 +119,10 @@ jobs:
       CHAINGUARD_ORG_UIDP: ${{ secrets.CHAINGUARD_ORG_UIDP }}
       # Lowest severity that fails the scan; override with a repo/org variable.
       GRYPE_FAIL_ON: ${{ vars.GRYPE_FAIL_ON || 'critical' }}
+      # Space- or comma-separated `name` or `name:tag` entries that may be absent
+      # without failing, e.g. a Custom Assembly image whose source tag isn't
+      # built yet. Empty by default; each entry needs a reason (README).
+      VERIFY_ALLOW_MISSING: ${{ vars.VERIFY_ALLOW_MISSING || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -131,11 +154,17 @@ jobs:
         run: |
           set -uo pipefail
           goldenctl catalog golden-images > "$RUNNER_TEMP/images.tsv"
+          allow=" ${VERIFY_ALLOW_MISSING//,/ } "
           fail=0
           while IFS=$'\t' read -r name tag issuer identity idregex; do
             ref="${DEST_REGISTRY}/${name}:${tag}"
-            if ! docker manifest inspect "$ref" >/dev/null 2>&1; then
-              echo "::notice::skip ${ref} (not present yet — e.g. a pre-bootstrap custom image)"
+            if ! err=$(docker manifest inspect "$ref" 2>&1 >/dev/null); then
+              if [[ "$allow" == *" ${name} "* || "$allow" == *" ${name}:${tag} "* ]]; then
+                echo "::warning::${ref} is missing; allowed by VERIFY_ALLOW_MISSING"
+              else
+                echo "::error::${ref} is missing after the mirror run (${err:-no detail}). Check the mirror job's log for this ref"
+                fail=1
+              fi
               continue
             fi
             echo "::group::verify ${ref}"
