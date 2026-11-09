@@ -23,6 +23,7 @@
 - [Custom Assembly (custom-assembly/)](#custom-assembly-custom-assembly)
   - [Prerequisites](#prerequisites)
 - [Runbook — common tasks](#runbook--common-tasks)
+  - [Pre-create the golden packages (private)](#pre-create-the-golden-packages-private)
   - [Add a pass-through image (mirror as-is)](#add-a-pass-through-image-mirror-as-is)
   - [Customize **all** custom images](#customize-all-custom-images)
   - [Customize **one** image](#customize-one-image)
@@ -81,7 +82,8 @@ Mirrors images **as-is** from `cgr.dev` into the registry with [`cgr-sync`](http
 - **Verifies** each image's signature before copying (Chainguard's signing identity; Custom Assembly images use the org's build identity — see `cgr-sync.yaml`).
 - **Diffs by digest** — only copies what's missing or changed, so re-runs are cheap.
 - Adding an image is a one-line entry in `cgr-sync.yaml`.
-- After mirroring, a **`verify` job independently checks each golden image in the registry**: a `grype` CVE scan (fails on `critical` by default — set the `GRYPE_FAIL_ON` variable to adjust) plus a `cosign verify-attestation` SBOM check, reusing the per-image identities from `cgr-sync.yaml`.
+- **Pushes only to packages that already exist and are private.** Before anything is pushed, `goldenctl catalog guard` checks every destination package; the run stops if one is missing, public, or not granted to this repository (see [the registry](#the-registry-private-ghcrio-packages)).
+- After mirroring, a **`verify` job independently checks each golden image in the registry**: a `grype` CVE scan (fails on `critical` by default — set the `GRYPE_FAIL_ON` variable to adjust) plus a `cosign verify-attestation` SBOM check, reusing the per-image identities from `cgr-sync.yaml`. A catalog ref that isn't in the registry after the mirror fails `verify` too.
 
 Runs every 6h, on every push to `main` that changes `cgr-sync.yaml` (so a merged catalog change mirrors straight away), and on manual dispatch. A `custom-assembly/**` change doesn't trigger it: Chainguard rebuilds the Custom Assembly images server-side, and the next scheduled or manual run mirrors the new digests.
 
@@ -89,8 +91,10 @@ Runs every 6h, on every push to `main` that changes `cgr-sync.yaml` (so a merged
 
 Images land at `ghcr.io/<owner>/golden/<image>` (for example `ghcr.io/cartyc/golden/python`). Set the `DEST_REGISTRY` repository variable to use another prefix; the workflow lowercases it, because OCI repository names must be lowercase. Both jobs log in with the built-in `GITHUB_TOKEN`: the `mirror` job has `packages: write` and the `verify` job `packages: read`. There is no registry credential to store or rotate.
 
-- **Keep the packages private.** A new ghcr package is private by default. Don't make it public: a public package can't be made private again.
-- **Package access.** cgr-sync copies images byte for byte, so it can't add the `org.opencontainers.image.source` label that links a package to this repository. If `verify` can't pull a newly created package, open the package's settings and add this repository under **Manage Actions access**: **Read** is enough for `verify`, and the mirror needs **Write**.
+- **The workflow must never create a package.** This repository is public, and GitHub documents that when a workflow creates a package with `GITHUB_TOKEN`, "the package inherits the visibility and permissions model of the repository where the workflow is run" ([Publishing and installing a package with GitHub Actions](https://docs.github.com/en/packages/managing-github-packages-using-github-actions-workflows/publishing-and-installing-a-package-with-github-actions#default-permissions-and-access-settings-for-packages-modified-through-workflows)). So a package the mirror creates comes out **public**, and a public package can't be made private again. The first ghcr run did exactly that. The "private by default" rule only covers packages first pushed some other way, such as from your machine.
+- **So the packages are pre-created by hand, as private**, and the mirror only updates them: see [Pre-create the golden packages (private)](#pre-create-the-golden-packages-private). The mirror job's guard (`goldenctl catalog guard`) runs before any push and fails if a destination package is missing, public, or can't be read with the job's token.
+- **How the guard checks.** The GitHub packages REST API, which reports `visibility`, needs a personal access token (classic); `GITHUB_TOKEN` can't call it. So the guard asks the registry instead, which needs no extra secret. An **anonymous** tags request succeeds only for a public package. A request with the job's `GITHUB_TOKEN` returns `404` for a missing package and `401`/`403` for one this repository has no access to. Any other answer fails the guard.
+- **Package access.** Each package grants this repository **Write** under **Manage Actions access**, which covers both the mirror and `verify`. cgr-sync copies images byte for byte, so it can't add the `org.opencontainers.image.source` label that would link a package to this repository. GitHub warns that "if you grant a public repository access to private packages, forks of the repository may be able to access the private packages". This repository's pull-request workflows could pull the golden images, so keep **Settings → Actions → General → Approval for running fork pull request workflows** on **Require approval for all external contributors**.
 - **Pulling.** Consumers such as clusters need a token with the `read:packages` scope (for example an image pull secret).
 - **Cost.** GitHub's [billing docs](https://docs.github.com/en/billing/concepts/product-billing/github-packages) say Container registry storage and bandwidth are currently free, with at least a month's notice before that changes.
 
@@ -259,7 +263,7 @@ then gated promote to prod) for the canonical two-tier release control.
 | &nbsp;&nbsp;`custom-assembly/overlays/golden-base.yaml` | The **base layer** (internal CA, locale), bound to every golden custom image. | Edit this to change all custom images at once. |
 | &nbsp;&nbsp;`custom-assembly/overlays/<repo>.yaml` | A **per-image layer** (e.g. `custom-python.yaml`). | Image-specific packages/config, layered on top of `golden-base`. |
 | &nbsp;&nbsp;`custom-assembly/bindings.yaml` | Which repos (or folder, or whole org) and which tags (`all`, `dev`, exact) get each overlay. | Add a binding to apply an overlay somewhere; remove one to detach it. |
-| `goldenctl/` | The **Go CLI** the CI calls for all catalog / intake / gate / policy / dashboard helpers (one binary, unit-tested). | Subcommands: `catalog refs\|changed\|add\|verify\|golden-images`, `intake parse\|overlay`, `gate policies\|cve`, `policy reconcile\|bindings\|libraries`, `overlay check\|reconcile\|render\|bind`, `dashboard`. Built per-job with `setup-go`; see `goldenctl/README.md`. |
+| `goldenctl/` | The **Go CLI** the CI calls for all catalog / intake / gate / policy / dashboard helpers (one binary, unit-tested). | Subcommands: `catalog refs\|changed\|add\|verify\|golden-images\|guard`, `intake parse\|overlay`, `gate policies\|cve`, `policy reconcile\|bindings\|libraries`, `overlay check\|reconcile\|render\|bind`, `dashboard`. Built per-job with `setup-go`; see `goldenctl/README.md`. |
 | `.github/workflows/` | The CI lanes (see the next table). | — |
 | `LICENSE` | Apache-2.0. | — |
 
@@ -267,7 +271,7 @@ then gated promote to prod) for the canonical two-tier release control.
 
 | Workflow | Triggers | What it does |
 | --- | --- | --- |
-| `passthrough-mirror.yaml` | schedule (6h), push to `main` changing `cgr-sync.yaml`, manual | Mirrors the `cgr-sync.yaml` catalog into the golden registry (ghcr.io) with `cgr-sync` (verify-before-mirror, signatures/attestations preserved), then independently verifies each landed image (grype CVE gate + cosign SBOM attestation). |
+| `passthrough-mirror.yaml` | schedule (6h), push to `main` changing `cgr-sync.yaml`, manual | Checks every destination package already exists and is private (`goldenctl catalog guard`), mirrors the `cgr-sync.yaml` catalog into the golden registry (ghcr.io) with `cgr-sync` (verify-before-mirror, signatures/attestations preserved), then independently verifies each catalog ref (grype CVE gate + cosign SBOM attestation; a missing ref fails). |
 | `custom-assembly.yaml` | PR/push on `custom-assembly/**`, daily, manual | `goldenctl overlay reconcile`: plan on PRs; on merge (after `registry-admin` approval) creates/updates overlays and attaches, re-scopes or detaches bindings, so Chainguard builds and signs the custom images. Repos still on standard Custom Assembly get the merged layers via `chainctl images repos build apply`. Daily drift check. |
 | `validate.yml` | every PR + push to `main` | Lints the workflows and configs (`actionlint`, `yamllint`) and confirms `cgr-sync.yaml` / overlays parse. |
 | `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
@@ -278,15 +282,19 @@ then gated promote to prod) for the canonical two-tier release control.
 
 ### Chainguard Checks and Workspaces (`.chainguard/`)
 
-The offline pull-request checks also run on [Chainguard Checks](https://www.chainguard.dev/docs/chainguard/checks/configuration), in hardened microVMs with no secrets, no identity, and no network unless a check lists hosts. They're defined in `.chainguard/ci/repo.yaml`:
+The pull-request checks also run on [Chainguard Checks](https://www.chainguard.dev/docs/chainguard/checks/configuration), in hardened microVMs with no secrets and no network unless a check lists hosts. They're defined in `.chainguard/ci/repo.yaml`:
 
 | Check | Runs when | Mirrors |
 | --- | --- | --- |
 | `lint` | every PR | `validate.yml`: actionlint, yamllint, configs parse |
 | `conftest` | `cgr-sync.yaml`, `custom-assembly/**`, `policy/**` or `.chainguard/**` change | the `conftest` job of `catalog-gate.yml` |
 | `goldenctl` | `goldenctl/**`, `custom-assembly/**` or `.chainguard/**` change; egress to the Go module proxy (and its storage.googleapis.com downloads) only | `goldenctl.yml`, plus `goldenctl overlay check` |
+| `catalog-exists` | `cgr-sync.yaml` or `.chainguard/**` change; pulls from `cgr.dev` with the `cgr-pull` workload identity | `validate-catalog.yml`: every source `image:tag` exists on `cgr.dev` |
+| `cve-scan` | `cgr-sync.yaml`, `custom-assembly/**` or `.chainguard/**` change; pulls from `cgr.dev` with the `cgr-pull` workload identity | the `cve-scan` job of `catalog-gate.yml`: no Critical or High CVEs in the images the change adds |
 
-Results appear on the PR as **Chainguard Checks (presubmit)**. They run beside the Actions they mirror; once they agree, require the summary check in branch protection and retire those Actions. Checks that need the registry or GitHub (the CVE scan, policy checks, mirroring, intake, sticky PR comments) stay on Actions: Checks get no GitHub token, and registry checks need a workload identity (`.chainguard/ci/identities.yaml`, a later step).
+`catalog-exists` and `cve-scan` use the `cgr-pull` identity in `.chainguard/ci/identities.yaml`. Chainguard Checks adds its `registry.pull` credential to the check's requests to `cgr.dev` outside the VM, so nothing in the VM holds a token. Because the repository is public, the identity is given only to pull requests opened by maintainers and to runs after merging. On anyone else's pull request these two checks show as "Could not be executed", and the Actions they mirror still run.
+
+Results appear on the PR as **Chainguard Checks (presubmit)**. They run beside the Actions they mirror; once they agree, require the summary check in branch protection and retire those Actions. A few things stay on Actions: the `policies-check` job (it calls the Chainguard API), mirroring, intake, and the sticky PR comments. Checks get no GitHub token.
 
 `chainctl checks validate .` checks the file offline; `chainctl checks run --check lint --watch` runs a pushed commit as an advisory run.
 
@@ -302,8 +310,9 @@ Results appear on the PR as **Chainguard Checks (presubmit)**. They run beside t
 
 The pass-through lane needs no registry secret: it pushes to ghcr.io with the
 built-in `GITHUB_TOKEN` (see [the registry](#the-registry-private-ghcrio-packages)).
-Optional repository variables: `DEST_REGISTRY` (default `ghcr.io/<owner>/golden`)
-and `GRYPE_FAIL_ON` (default `critical`).
+Optional repository variables: `DEST_REGISTRY` (default `ghcr.io/<owner>/golden`),
+`GRYPE_FAIL_ON` (default `critical`) and `VERIFY_ALLOW_MISSING` (default empty;
+see [Verify failures](#verify-failures)).
 
 These were previously hard-coded; they're org identifiers (not credentials), but
 parameterizing keeps the repo portable and free of org-specific values. The
@@ -374,6 +383,64 @@ The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguar
 
 > PRs target `main`. The pass-through mirror is timer-driven, so after merging a catalog change either wait for the next 6h run or trigger it manually.
 
+### Pre-create the golden packages (private)
+
+The mirror never creates a package. A package created by this public repository's workflow would come out public, and a public package can't be made private again (see [the registry](#the-registry-private-ghcrio-packages)). So each destination package is created once from your machine, by pushing a tiny placeholder image. A package first pushed from the command line is private and isn't linked to any repository ([Working with the Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#pushing-container-images)). The placeholder is an empty OCI image with no labels, so nothing links it to a repository. Then grant this repository write access, and the mirror only updates what exists.
+
+You need [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane) and `gh`, signed in as the package owner (`cartyc`). The commands below are for every package in today's `cgr-sync.yaml`. For a new catalog entry, use just that name.
+
+1. **Let your `gh` login write packages for now**, and hand its token to `crane`. GitHub asks you to approve the extra `write:packages` scope in the browser:
+   ```bash
+   gh auth refresh -h github.com -s write:packages
+   gh auth token | crane auth login ghcr.io -u cartyc --password-stdin
+   ```
+2. **Push the placeholder** to each package. This creates the packages as private:
+   ```bash
+   tmp=$(mktemp -d) && tar -cf "$tmp/empty.tar" -T /dev/null
+   for name in python jdk jre custom-python custom-jdk nginx node; do
+     crane append --oci-empty-base -f "$tmp/empty.tar" -t "ghcr.io/cartyc/golden/${name}:golden-bootstrap"
+   done
+   ```
+   Pushing to a name you deleted within the last 30 days uses up that name, so the deleted package can no longer be restored. That's intended here: the packages deleted after the first ghcr run were public.
+3. **Check every package is private.** All seven lines must say `private`:
+   ```bash
+   for name in python jdk jre custom-python custom-jdk nginx node; do
+     printf '%-14s ' "$name"; gh api "/users/cartyc/packages/container/golden%2F${name}" --jq .visibility
+   done
+   ```
+   If any says `public`, stop: don't enable the mirror, and don't push to that package again.
+4. **Grant this repository write access**, for each package, at `https://github.com/users/cartyc/packages/container/golden%2F<name>/settings`. Under **Manage Actions access**, click **Add repository**, choose `cartyc/golden-image` and set the role to **Write**. There is no API for this step. Optionally, also connect the package to the repository (**Connect repository** on the package page). If you do, don't turn on inheriting access from the repository: a package connected after it was published keeps its own access settings unless you choose to inherit. Never use **Change visibility** in the Danger Zone.
+5. **Drop the write scope** and log `crane` out. Keep `delete:packages` for step 7:
+   ```bash
+   crane auth logout ghcr.io
+   gh auth refresh -h github.com -r write:packages
+   ```
+6. **Enable and run the mirror.** The guard checks every package before the first push:
+   ```bash
+   gh workflow enable passthrough-mirror.yaml --repo cartyc/golden-image
+   gh workflow run passthrough-mirror.yaml --repo cartyc/golden-image
+   ```
+   Watch it with `gh run watch --repo cartyc/golden-image`. When it passes, rerun step 3; the packages must still be private.
+7. **Delete the placeholders**, once a mirror run has passed. First list exactly what will go (one version per package, tagged `golden-bootstrap`):
+   ```bash
+   for name in python jdk jre custom-python custom-jdk nginx node; do
+     gh api "/user/packages/container/golden%2F${name}/versions" --paginate \
+       --jq ".[] | select(.metadata.container.tags | index(\"golden-bootstrap\")) | \"${name} \(.id) \(.name) \(.metadata.container.tags)\""
+   done
+   ```
+   Then delete those versions. This deletes only the version tagged `golden-bootstrap` in each package:
+   ```bash
+   for name in python jdk jre custom-python custom-jdk nginx node; do
+     for id in $(gh api "/user/packages/container/golden%2F${name}/versions" --paginate \
+         --jq '.[] | select(.metadata.container.tags | index("golden-bootstrap")) | .id'); do
+       gh api -X DELETE "/user/packages/container/golden%2F${name}/versions/${id}" && echo "deleted ${name} version ${id}"
+     done
+   done
+   ```
+   A placeholder left behind does no harm: the mirror and `verify` only touch the catalog's tags.
+
+If the guard fails later, its message names the package and the reason: missing (pre-create it, steps 1–5), public (stop, and don't push to it), or not readable with the job's token (step 4).
+
 ### Add a pass-through image (mirror as-is)
 
 1. Add an entry to `cgr-sync.yaml` under `repositories:`:
@@ -383,8 +450,9 @@ The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguar
        list: ["latest", "7"]
    ```
 2. Open a PR. **`validate-catalog`** confirms every `image:tag` exists at `cgr.dev` before merge; **`validate`** lints the config.
-3. Merge, then mirror it now instead of waiting: `gh workflow run passthrough-mirror.yaml` (or **Actions → Passthrough mirror → Run workflow**).
-4. The `verify` job gates it (grype CVE scan + cosign SBOM attestation). A signing-identity mismatch means the tag is signed by a different identity than the policy allows — see *Verify failures* below.
+3. **Before merging**, pre-create `ghcr.io/<owner>/golden/redis` as a private package and grant this repository Write: [Pre-create the golden packages](#pre-create-the-golden-packages-private), steps 1–5, with just the new name. Otherwise the guard stops the mirror run that the merge triggers. This applies to entries the image-request intake adds too.
+4. Merge, then mirror it now instead of waiting: `gh workflow run passthrough-mirror.yaml` (or **Actions → Passthrough mirror → Run workflow**).
+5. The `verify` job gates it (grype CVE scan + cosign SBOM attestation). A signing-identity mismatch means the tag is signed by a different identity than the policy allows — see *Verify failures* below.
 
 ### Customize **all** custom images
 
@@ -435,3 +503,5 @@ Bump `CGR_SYNC_IMAGE: ghcr.io/cartyc/image-syncer:vX.Y.Z` in `passthrough-mirror
 - **`grype found findings >= critical`** — a real CVE in the mirrored image. Triage upstream; to change the gate set the `GRYPE_FAIL_ON` repo variable (e.g. `high`).
 - **`no matching signatures … got subjects [chainguard-images/images-private…]`** — the tag is signed by Chainguard's **public-catalog** identity, not your org's. Either give that repo a verify policy that accepts both identities, or drop the tag.
 - **`SBOM attestation verification failed`** — check the identity regexp resolves (the `CHAINGUARD_ORG_UIDP` secret) and that the attestation exists on the mirror (`cosign tree <ref>`).
+- **`<ref> is missing after the mirror run`** — the catalog lists the ref but the registry doesn't have it. Look in the mirror job's log for that ref: a denied push, a tag that doesn't exist at `cgr.dev` (`WARN requested tag … not found`), or a failed signature check. The next run retries it, since cgr-sync diffs by digest. If you expect a ref to be missing for a while, add it to the `VERIFY_ALLOW_MISSING` repository variable, as `name` or `name:tag` separated by spaces or commas. The usual case is a Custom Assembly image whose tag Chainguard hasn't built yet. Write down why next to the change, and remove the entry once the ref lands.
+- **`verify` didn't run** — it runs only after the mirror job's guard passes. Fix what the guard reported first (see [Pre-create the golden packages](#pre-create-the-golden-packages-private)).
