@@ -13,8 +13,10 @@ defaults:
   # Your Chainguard org's registry namespace, supplied by the workflow from the
   # CHAINGUARD_ORG secret (${VAR} is expanded from the env by cgr-sync at load).
   source: cgr.dev/${CHAINGUARD_ORG}
-  # Full GAR path, e.g. <region>-docker.pkg.dev/<project>/<repo>. Supplied by the
-  # workflow from the DEST_REGISTRY secret (${VAR} is expanded from the env).
+  # Registry prefix, e.g. ghcr.io/<owner>/golden (images land at
+  # <prefix>/<name>). Supplied by the workflow: ghcr.io/<repo-owner>/golden
+  # unless the DEST_REGISTRY repo variable overrides it (${VAR} is expanded
+  # from the env).
   destination: ${DEST_REGISTRY}
   tags:
     list: ["latest"]

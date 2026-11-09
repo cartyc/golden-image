@@ -45,12 +45,12 @@
 
 ## Pipeline overview
 
-Two complementary lanes feed the golden-images registry (Google Artifact Registry). Customization happens **server-side** with Chainguard Custom Assembly (no derived Dockerfiles), and everything reaches Artifact Registry through the `cgr-sync` pass-through mirror:
+Two complementary lanes feed the golden-images registry (private GitHub Container Registry packages under `ghcr.io/<owner>/golden/`). Customization happens **server-side** with Chainguard Custom Assembly (no derived Dockerfiles), and everything reaches the registry through the `cgr-sync` pass-through mirror:
 
 ```mermaid
 flowchart TB
   src[("cgr.dev<br/>Chainguard source")]
-  gar[("Google Artifact Registry<br/>golden images")]
+  gar[("ghcr.io/OWNER/golden<br/>golden images (private)")]
 
   subgraph ca["Custom Assembly Overlays — custom-assembly/"]
     direction TB
@@ -81,9 +81,18 @@ Mirrors images **as-is** from `cgr.dev` into the registry with [`cgr-sync`](http
 - **Verifies** each image's signature before copying (Chainguard's signing identity; Custom Assembly images use the org's build identity — see `cgr-sync.yaml`).
 - **Diffs by digest** — only copies what's missing or changed, so re-runs are cheap.
 - Adding an image is a one-line entry in `cgr-sync.yaml`.
-- After mirroring, a **`verify` job independently checks each golden image in Artifact Registry**: a `grype` CVE scan (fails on `critical` by default — set the `GRYPE_FAIL_ON` variable to adjust) plus a `cosign verify-attestation` SBOM check, reusing the per-image identities from `cgr-sync.yaml`.
+- After mirroring, a **`verify` job independently checks each golden image in the registry**: a `grype` CVE scan (fails on `critical` by default — set the `GRYPE_FAIL_ON` variable to adjust) plus a `cosign verify-attestation` SBOM check, reusing the per-image identities from `cgr-sync.yaml`.
 
-Runs on a schedule (every 6h) plus manual dispatch (timer-driven — it does not run on merge; use the manual trigger to mirror a catalog change immediately).
+Runs every 6h, on every push to `main` that changes `cgr-sync.yaml` (so a merged catalog change mirrors straight away), and on manual dispatch. A `custom-assembly/**` change doesn't trigger it: Chainguard rebuilds the Custom Assembly images server-side, and the next scheduled or manual run mirrors the new digests.
+
+#### The registry: private ghcr.io packages
+
+Images land at `ghcr.io/<owner>/golden/<image>` (for example `ghcr.io/cartyc/golden/python`). Set the `DEST_REGISTRY` repository variable to use another prefix; the workflow lowercases it, because OCI repository names must be lowercase. Both jobs log in with the built-in `GITHUB_TOKEN`: the `mirror` job has `packages: write` and the `verify` job `packages: read`. There is no registry credential to store or rotate.
+
+- **Keep the packages private.** A new ghcr package is private by default. Don't make it public: a public package can't be made private again.
+- **Package access.** cgr-sync copies images byte for byte, so it can't add the `org.opencontainers.image.source` label that links a package to this repository. If `verify` can't pull a newly created package, open the package's settings and add this repository under **Manage Actions access**: **Read** is enough for `verify`, and the mirror needs **Write**.
+- **Pulling.** Consumers such as clusters need a token with the `read:packages` scope (for example an image pull secret).
+- **Cost.** GitHub's [billing docs](https://docs.github.com/en/billing/concepts/product-billing/github-packages) say Container registry storage and bandwidth are currently free, with at least a month's notice before that changes.
 
 ### Which lane?
 
@@ -92,7 +101,7 @@ Runs on a schedule (every 6h) plus manual dispatch (timer-driven — it does not
 | needs extra packages, certs, or other modification | **Custom Assembly** (built + signed by Chainguard) |
 | ships unmodified | **pass-through** |
 
-Either way the image lands in Artifact Registry via the pass-through mirror.
+Either way the image lands in the golden registry (ghcr.io) via the pass-through mirror.
 
 ## Policy status dashboard
 
@@ -124,7 +133,7 @@ flowchart TD
   remediate["Requester remediates<br/>(e.g. bump the version)"]
   codeowners{"CODEOWNERS<br/>approve"}
   merge(["merge to main"])
-  mirror[("passthrough-mirror, every 6h:<br/>verify, mirror to Artifact Registry")]
+  mirror[("passthrough-mirror, on merge + every 6h:<br/>verify, mirror to ghcr.io")]
 
   issue --> review
   review -- "adds approved label" --> intake --> gate
@@ -245,7 +254,7 @@ then gated promote to prod) for the canonical two-tier release control.
 
 | Path | What it is | How you use it |
 | --- | --- | --- |
-| `cgr-sync.yaml` | The **pass-through catalog** — which images/tags get mirrored as-is from `cgr.dev` into Artifact Registry, plus the signature-verify policy. | Add or remove an image by editing the `repositories:` list (one entry = a repo + its tags); shared `defaults:` cover source, destination, and verify. `${VAR}` placeholders are filled from the workflow's secrets at run time. |
+| `cgr-sync.yaml` | The **pass-through catalog** — which images/tags get mirrored as-is from `cgr.dev` into the golden registry (ghcr.io), plus the signature-verify policy. | Add or remove an image by editing the `repositories:` list (one entry = a repo + its tags); shared `defaults:` cover source, destination, and verify. `${VAR}` placeholders are filled from the workflow's secrets at run time. |
 | `custom-assembly/` | Chainguard **Custom Assembly Overlays**: named, reusable server-side image customizations and where they bind. | See the rows below; `goldenctl overlay reconcile` keeps the organization in line with them. |
 | &nbsp;&nbsp;`custom-assembly/overlays/golden-base.yaml` | The **base layer** (internal CA, locale), bound to every golden custom image. | Edit this to change all custom images at once. |
 | &nbsp;&nbsp;`custom-assembly/overlays/<repo>.yaml` | A **per-image layer** (e.g. `custom-python.yaml`). | Image-specific packages/config, layered on top of `golden-base`. |
@@ -258,7 +267,7 @@ then gated promote to prod) for the canonical two-tier release control.
 
 | Workflow | Triggers | What it does |
 | --- | --- | --- |
-| `passthrough-mirror.yaml` | schedule (6h) + manual | Mirrors the `cgr-sync.yaml` catalog into Artifact Registry with `cgr-sync` (verify-before-mirror, signatures/attestations preserved), then independently verifies each landed image (grype CVE gate + cosign SBOM attestation). |
+| `passthrough-mirror.yaml` | schedule (6h), push to `main` changing `cgr-sync.yaml`, manual | Mirrors the `cgr-sync.yaml` catalog into the golden registry (ghcr.io) with `cgr-sync` (verify-before-mirror, signatures/attestations preserved), then independently verifies each landed image (grype CVE gate + cosign SBOM attestation). |
 | `custom-assembly.yaml` | PR/push on `custom-assembly/**`, daily, manual | `goldenctl overlay reconcile`: plan on PRs; on merge (after `registry-admin` approval) creates/updates overlays and attaches, re-scopes or detaches bindings, so Chainguard builds and signs the custom images. Repos still on standard Custom Assembly get the merged layers via `chainctl images repos build apply`. Daily drift check. |
 | `validate.yml` | every PR + push to `main` | Lints the workflows and configs (`actionlint`, `yamllint`) and confirms `cgr-sync.yaml` / overlays parse. |
 | `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
@@ -277,7 +286,7 @@ The offline pull-request checks also run on [Chainguard Checks](https://www.chai
 | `conftest` | `cgr-sync.yaml`, `custom-assembly/**`, `policy/**` or `.chainguard/**` change | the `conftest` job of `catalog-gate.yml` |
 | `goldenctl` | `goldenctl/**`, `custom-assembly/**` or `.chainguard/**` change; egress to the Go module proxy (and its storage.googleapis.com downloads) only | `goldenctl.yml`, plus `goldenctl overlay check` |
 
-Results appear on the PR as **Chainguard Checks (presubmit)**. They run beside the Actions they mirror; once they agree, require the summary check in branch protection and retire those Actions. Checks that need the registry, Google Cloud or GitHub (the CVE scan, policy checks, mirroring, intake, sticky PR comments) stay on Actions: Checks get no GitHub token, and registry checks need a workload identity (`.chainguard/ci/identities.yaml`, a later step).
+Results appear on the PR as **Chainguard Checks (presubmit)**. They run beside the Actions they mirror; once they agree, require the summary check in branch protection and retire those Actions. Checks that need the registry or GitHub (the CVE scan, policy checks, mirroring, intake, sticky PR comments) stay on Actions: Checks get no GitHub token, and registry checks need a workload identity (`.chainguard/ci/identities.yaml`, a later step).
 
 `chainctl checks validate .` checks the file offline; `chainctl checks run --check lint --watch` runs a pushed commit as an advisory run.
 
@@ -287,10 +296,14 @@ Results appear on the PR as **Chainguard Checks (presubmit)**. They run beside t
 
 | Secret | Used by |
 | --- | --- |
-| `DEST_REGISTRY`, `REGION`, `SERVICE_ACCOUNT_KEY` | pass-through lane (Artifact Registry destination + auth) |
 | `CHAINGUARD_IDENTITY` | all workflows — the assumable Chainguard identity for `setup-chainctl` (`<org-uidp>/<identity-id>`) |
 | `CHAINGUARD_ORG` | source namespace — your org's registry name (e.g. `your-org.com`), used as `cgr.dev/${CHAINGUARD_ORG}` and the Custom Assembly `--parent` |
 | `CHAINGUARD_ORG_UIDP` | pass-through verify policy — the org UIDP in the cosign identity regexp (the part before `/` in `CHAINGUARD_IDENTITY`) |
+
+The pass-through lane needs no registry secret: it pushes to ghcr.io with the
+built-in `GITHUB_TOKEN` (see [the registry](#the-registry-private-ghcrio-packages)).
+Optional repository variables: `DEST_REGISTRY` (default `ghcr.io/<owner>/golden`)
+and `GRYPE_FAIL_ON` (default `critical`).
 
 These were previously hard-coded; they're org identifiers (not credentials), but
 parameterizing keeps the repo portable and free of org-specific values. The
@@ -355,7 +368,7 @@ Complete these once:
 
    A repo created this way starts on standard Custom Assembly. Ask the account team to move it to overlays, so it can take tag-specific bindings.
 
-The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguard, so the **pass-through lane** mirrors it to Artifact Registry like any other image (it's in `cgr-sync.yaml`, with a verify policy scoped to the Custom Assembly signing identity). The base layer also bundles the internal CA into the system truststore (replacing incert), and into the Java truststore for JDK images.
+The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguard, so the **pass-through lane** mirrors it to the golden registry (ghcr.io) like any other image (it's in `cgr-sync.yaml`, with a verify policy scoped to the Custom Assembly signing identity). The base layer also bundles the internal CA into the system truststore (replacing incert), and into the Java truststore for JDK images.
 
 ## Runbook — common tasks
 
