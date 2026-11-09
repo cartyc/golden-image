@@ -1,6 +1,7 @@
 name: Passthrough mirror (cgr-sync)
 
 # Mirror pass-through Chainguard images straight into the golden-images registry
+# (private GitHub Container Registry packages, ghcr.io/<owner>/golden/<image>)
 # using cgr-sync (github.com/cartyc/image-syncer). This preserves multi-arch
 # indexes and the upstream cosign signatures/attestations — which a docker
 # build/push flattens away — and verifies each image's signature before copying.
@@ -8,10 +9,13 @@ name: Passthrough mirror (cgr-sync)
 
 on:
   # Reconcile on a timer AND right after the catalog changes on main, so a newly
-  # approved pass-through image lands in Artifact Registry immediately instead of
-  # waiting up to 6h for the next cron. Scoped to cgr-sync.yaml (the mirror's
-  # source-of-truth catalog); custom-assembly/** images are produced by their own
-  # build pipelines, not this mirror, so they don't belong here.
+  # approved image lands in the golden registry immediately instead of waiting up
+  # to 6h for the next cron. Scoped to cgr-sync.yaml, the mirror's catalog. That
+  # catalog includes the Custom Assembly images (custom-python, custom-jdk),
+  # which this job mirrors like any other entry. A custom-assembly/** change
+  # isn't a trigger: Chainguard rebuilds those images server-side after the
+  # custom-assembly workflow applies the overlays, so the new digests are picked
+  # up by the next scheduled (or manual) run.
   push:
     branches: ["main"]
     paths: ["cgr-sync.yaml"]
@@ -20,7 +24,7 @@ on:
   workflow_dispatch: {}
 
 # Serialize mirror runs — a manual run and a scheduled run (or an overrunning
-# previous run) must not race on the same Artifact Registry pushes. New runs
+# previous run) must not race on the same registry pushes. New runs
 # queue rather than cancel, so an in-flight mirror always finishes.
 concurrency:
   group: passthrough-mirror
@@ -31,12 +35,15 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # setup-chainctl (source auth)
+      id-token: write # OIDC token for setup-chainctl (cgr.dev source auth)
+      packages: write # push the mirrored images to ghcr.io with GITHUB_TOKEN
     env:
       # Consumed by cgr-sync.yaml as ${CHAINGUARD_ORG} (source namespace),
       # ${DEST_REGISTRY} (destination), and ${CHAINGUARD_ORG_UIDP} (verify regexp).
       CHAINGUARD_ORG: ${{ secrets.CHAINGUARD_ORG }}
-      DEST_REGISTRY: ${{ secrets.DEST_REGISTRY }}
+      # ghcr.io/<owner>/golden unless the DEST_REGISTRY repo variable overrides
+      # it; lowercased at login (OCI repository names must be lowercase).
+      DEST_REGISTRY: ${{ vars.DEST_REGISTRY || format('ghcr.io/{0}/golden', github.repository_owner) }}
       CHAINGUARD_ORG_UIDP: ${{ secrets.CHAINGUARD_ORG_UIDP }}
     steps:
       - name: Checkout (golden-image)
@@ -50,20 +57,18 @@ jobs:
       - name: Install cosign (verify-before-mirror)
         uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
 
-      - name: Auth to Google Cloud
-        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935
-        with:
-          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@77e7a554d41e2ee56fc945c52dfd3f33d12def9a
-
-      - name: Docker auth for Artifact Registry
-        run: gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
+      # The built-in token, scoped by `packages: write` above. cgr-sync, cosign
+      # and grype all read the host Docker config this writes.
+      - name: Log in to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "DEST_REGISTRY=${DEST_REGISTRY,,}" >> "$GITHUB_ENV"
+          printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       # Pull the pinned cgr-sync release image and extract its binary, instead
       # of checking out the source and building it. The binary runs on the
-      # runner so it reuses the host keychain (cgr.dev + GAR auth above) and the
+      # runner so it reuses the host keychain (cgr.dev + ghcr.io auth above) and the
       # host cosign for verify-before-mirror. Bump CGR_SYNC_IMAGE to upgrade.
       - name: Fetch cgr-sync binary
         env:
@@ -78,7 +83,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/cgr-sync" sync -config cgr-sync.yaml -continue-on-error
 
-  # Independently verify the golden images that landed in Artifact Registry:
+  # Independently verify the golden images that landed in the golden registry:
   # a grype CVE scan (gate) plus a cosign SBOM-attestation check. Runs after the
   # mirror regardless of its outcome (so images that did land are still checked);
   # images not yet present (e.g. a pre-bootstrap custom-*) are skipped.
@@ -88,9 +93,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+      packages: read # pull the mirrored images from ghcr.io with GITHUB_TOKEN
     env:
-      DEST_REGISTRY: ${{ secrets.DEST_REGISTRY }}
+      DEST_REGISTRY: ${{ vars.DEST_REGISTRY || format('ghcr.io/{0}/golden', github.repository_owner) }}
       # Expands the verify identity regexp in cgr-sync.yaml for the helper below.
       CHAINGUARD_ORG_UIDP: ${{ secrets.CHAINGUARD_ORG_UIDP }}
       # Lowest severity that fails the scan; override with a repo/org variable.
@@ -101,22 +106,26 @@ jobs:
 
       - uses: ./.github/actions/goldenctl
 
-      - name: Auth to Google Cloud
-        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935
-        with:
-          credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@77e7a554d41e2ee56fc945c52dfd3f33d12def9a
-
-      - name: Docker auth for Artifact Registry
-        run: gcloud auth configure-docker ${{ secrets.REGION }}-docker.pkg.dev --quiet
+      # The built-in token, scoped by `packages: read` above. cosign and grype
+      # read the host Docker config this writes.
+      - name: Log in to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "DEST_REGISTRY=${DEST_REGISTRY,,}" >> "$GITHUB_ENV"
+          printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       - name: Install cosign
         uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
 
+      # Pinned release tarball, the same version as catalog-gate.yml — bump both
+      # together so the PR gate and the post-mirror scan agree.
       - name: Install grype
-        run: curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+        run: |
+          ver=0.117.0
+          curl -sSfL "https://github.com/anchore/grype/releases/download/v${ver}/grype_${ver}_linux_amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin grype
+          grype version
 
       - name: Scan + verify golden images
         run: |
