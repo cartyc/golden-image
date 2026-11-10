@@ -79,9 +79,9 @@ checks:
       /tmp/goldenctl catalog refs | /tmp/goldenctl catalog verify
 
   cve-scan:
-    description: grype finds no Critical or High CVEs in the images this change adds
+    description: grype finds no Critical or High CVEs (beyond unexpired waivers in policy/cve-exceptions.yaml) in the images this change adds
     when:
-      changed: ["cgr-sync.yaml", "custom-assembly/**", ".chainguard/**"]
+      changed: ["cgr-sync.yaml", "custom-assembly/**", "policy/cve-exceptions.yaml", ".chainguard/**"]
     identity: cgr-pull
     environment:
       packages: [bash, coreutils, git, go-1.26, grype]

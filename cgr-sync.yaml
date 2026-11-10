@@ -68,3 +68,85 @@ repositories:
   - name: node
     tags:
       list: ["22"]
+
+  # --- Images cartyc/app-delivery deploys or builds from --------------------
+  # Each lands under the same name it has on cgr.dev (no per-entry destination),
+  # and app-delivery points each chart's image.repository at it. Tags are the
+  # ones app-delivery pins; bump them together with its chart versions.
+
+  # Argo CD bootstrap (argo-cd chart 10.11.7). The argocd image also carries the
+  # repo-server binary, helm, kustomize and git, so it serves every component.
+  - name: argocd
+    tags:
+      list: ["v3.5.7"]
+  - name: redis
+    tags:
+      list: ["v8.8.4"]
+
+  # cert-manager (jetstack chart v1.21.3). acmesolver is passed to the controller
+  # as --acme-http01-solver-image rather than run as a pod at install time.
+  - name: cert-manager-controller
+    tags:
+      list: ["v1.21.3"]
+  - name: cert-manager-webhook
+    tags:
+      list: ["v1.21.3"]
+  - name: cert-manager-cainjector
+    tags:
+      list: ["v1.21.3"]
+  - name: cert-manager-acmesolver
+    tags:
+      list: ["v1.21.3"]
+  - name: cert-manager-startupapicheck
+    tags:
+      list: ["v1.21.3"]
+
+  # Kyverno (kyverno chart 3.9.2). Mirrored flat, under the cgr.dev names, not
+  # the chart's nested kyverno/<component> paths: cgr-sync appends the entry
+  # name to a destination unless it already ends in it, so
+  # kyverno-background-controller can't land at kyverno/background-controller.
+  # app-delivery sets each component's image.repository instead.
+  - name: kyverno
+    tags:
+      list: ["v1.19.2"]
+  - name: kyvernopre
+    tags:
+      list: ["v1.19.2"]
+  - name: kyverno-background-controller
+    tags:
+      list: ["v1.19.2"]
+  - name: kyverno-cleanup-controller
+    tags:
+      list: ["v1.19.2"]
+  - name: kyverno-reports-controller
+    tags:
+      list: ["v1.19.2"]
+  - name: kyverno-cli
+    tags:
+      list: ["v1.19.2"]
+
+  # kube-state-metrics (prometheus-community chart 8.5.0).
+  - name: kube-state-metrics
+    tags:
+      list: ["v2.20.0"]
+
+  # Build-time bases for app-delivery's in-house apps (apps/*/Dockerfile).
+  # python:latest is mirrored above.
+  - name: go
+    tags:
+      list: ["latest-dev"]
+
+  # The ONE image from outside the org: static isn't entitled to this org, so
+  # it comes from Chainguard's public catalog. Its own source, and its own
+  # verify block, because public-catalog images are signed by Chainguard's
+  # GitHub release workflow, not by an enforce.dev identity under the org UIDP
+  # (checked with cosign verify against cgr.dev/chainguard/static:latest). It's
+  # a build-time base only, so Kyverno's admission check never sees it.
+  - name: static
+    source: cgr.dev/chainguard
+    tags:
+      list: ["latest"]
+    verify:
+      enabled: true
+      certificate_oidc_issuer: https://token.actions.githubusercontent.com
+      certificate_identity_regexp: ^https://github\.com/chainguard-images/images/

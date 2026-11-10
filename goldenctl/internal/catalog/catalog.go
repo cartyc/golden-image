@@ -19,6 +19,8 @@ import (
 const (
 	File       = "cgr-sync.yaml"
 	OverlayDir = "custom-assembly"
+	// ExceptionsFile is the CVE gate's waiver list (see internal/gate).
+	ExceptionsFile = "policy/cve-exceptions.yaml"
 )
 
 var (
@@ -311,12 +313,55 @@ func ChangedRefs(baseSHA, curSHA string) ([]string, error) {
 		}
 	}
 
+	// CVE gate waivers: when the waiver list changed, re-gate every image a
+	// waiver names before or after the change, so a removed, narrowed or
+	// mistyped waiver is scanned (and the file validated) on that PR.
+	out, _ = exec.Command("git", "diff", "--name-only", baseSHA, cur, "--", ExceptionsFile).Output()
+	if strings.TrimSpace(string(out)) != "" {
+		named := waiverImages(readFile(ExceptionsFile))
+		if by, ok := gitShow(baseSHA, ExceptionsFile); ok {
+			for n := range waiverImages(by) {
+				named[n] = true
+			}
+		}
+		for _, r := range head {
+			if named[repoOf(r)] {
+				changed[r] = true
+			}
+		}
+	}
+
 	res := make([]string, 0, len(changed))
 	for r := range changed {
 		res = append(res, r)
 	}
 	sort.Strings(res)
 	return res, nil
+}
+
+func readFile(path string) string {
+	b, _ := os.ReadFile(path)
+	return string(b)
+}
+
+// waiverImages returns the image names listed by any waiver in text. It only
+// reads names; internal/gate validates the file when the gate runs.
+func waiverImages(text string) map[string]bool {
+	var d struct {
+		Exceptions []struct {
+			Images []string `yaml:"images"`
+		} `yaml:"exceptions"`
+	}
+	out := map[string]bool{}
+	if yaml.Unmarshal([]byte(text), &d) != nil {
+		return out
+	}
+	for _, e := range d.Exceptions {
+		for _, n := range e.Images {
+			out[n] = true
+		}
+	}
+	return out
 }
 
 // overlayChanges compares the effective Custom Assembly config of each repo
