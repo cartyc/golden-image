@@ -25,12 +25,14 @@
 - [Runbook — common tasks](#runbook--common-tasks)
   - [Pre-create the golden packages (private)](#pre-create-the-golden-packages-private)
   - [Add a pass-through image (mirror as-is)](#add-a-pass-through-image-mirror-as-is)
+  - [Mirror an image the org isn't entitled to (public catalog)](#mirror-an-image-the-org-isnt-entitled-to-public-catalog)
   - [Customize **all** custom images](#customize-all-custom-images)
   - [Customize **one** image](#customize-one-image)
   - [Add a brand-new custom image](#add-a-brand-new-custom-image)
   - [Rotate / replace the internal CA](#rotate--replace-the-internal-ca)
   - [Change the locale (or other base env/packages)](#change-the-locale-or-other-base-envpackages)
   - [Upgrade cgr-sync](#upgrade-cgr-sync)
+  - [CVE gate waivers (not VEX)](#cve-gate-waivers-not-vex)
   - [Verify failures](#verify-failures)
 
 
@@ -189,6 +191,9 @@ appends a valid entry the same way.
     policies can't see CVEs — their input is package lifecycle metadata only —
     so this scanner step is the actual **CVE-count** gate. Tune the thresholds
     in the workflow `env:`.
+    A CVE with no fix yet can be waived for named images, for at most 30 days,
+    in `policy/cve-exceptions.yaml`: see
+    [CVE gate waivers](#cve-gate-waivers-not-vex).
   - Both checks are **scoped to the refs the PR changed** (`goldenctl catalog changed`),
     so a request is judged on its own change, not the whole catalog's
     pre-existing state. Whole-catalog coverage still runs via the scheduled
@@ -277,7 +282,7 @@ then gated promote to prod) for the canonical two-tier release control.
 | `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
 | `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
 | `image-request-intake.yml` | issue labeled `approved` | Turns an approved **image-request** issue into a ready-to-review PR: parses the form, appends the `cgr-sync.yaml` entry (+ for the Custom Assembly lane, scaffolds `custom-assembly/overlays/<repo>.yaml` and binds it with `golden-base`), opens the PR, and comments the link on the issue. |
-| `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**` | Gates a change request — **scoped to the refs the PR changed**: `conftest` + `chainctl policies check` (ENFORCE denials fail, DRY_RUN warn) + `grype` CVE-count scan. Posts a sticky **gate-summary** comment and, on CVE failure, an itemized **CVE-details** comment. |
+| `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**`/`policy/cve-exceptions.yaml` | Gates a change request — **scoped to the refs the PR changed**: `conftest` + `chainctl policies check` (ENFORCE denials fail, DRY_RUN warn) + `grype` CVE-count scan. Posts a sticky **gate-summary** comment and, on CVE failure, an itemized **CVE-details** comment. |
 | `policies.yml` | PR + merge on `registry-policies/**` or `library-policies/**` | Unified plan → gate → apply for **both** container pull policies (`registry-policies/`, incl. `bindings.yaml`) and Libraries policies (`library-policies/`): preview on PR, reconcile + prune on merge, gated by the `registry-admin` environment. |
 
 ### Chainguard Checks and Workspaces (`.chainguard/`)
@@ -290,7 +295,7 @@ The pull-request checks also run on [Chainguard Checks](https://www.chainguard.d
 | `conftest` | `cgr-sync.yaml`, `custom-assembly/**`, `policy/**` or `.chainguard/**` change | the `conftest` job of `catalog-gate.yml` |
 | `goldenctl` | `goldenctl/**`, `custom-assembly/**` or `.chainguard/**` change; egress to the Go module proxy (and its storage.googleapis.com downloads) only | `goldenctl.yml`, plus `goldenctl overlay check` |
 | `catalog-exists` | `cgr-sync.yaml` or `.chainguard/**` change; pulls from `cgr.dev` with the `cgr-pull` workload identity | `validate-catalog.yml`: every source `image:tag` exists on `cgr.dev` |
-| `cve-scan` | `cgr-sync.yaml`, `custom-assembly/**` or `.chainguard/**` change; pulls from `cgr.dev` with the `cgr-pull` workload identity | the `cve-scan` job of `catalog-gate.yml`: no Critical or High CVEs in the images the change adds |
+| `cve-scan` | `cgr-sync.yaml`, `custom-assembly/**`, `policy/cve-exceptions.yaml` or `.chainguard/**` change; pulls from `cgr.dev` with the `cgr-pull` workload identity | the `cve-scan` job of `catalog-gate.yml`: no Critical or High CVEs in the images the change adds, beyond unexpired waivers |
 
 `catalog-exists` and `cve-scan` use the `cgr-pull` identity in `.chainguard/ci/identities.yaml`. Chainguard Checks adds its `registry.pull` credential to the check's requests to `cgr.dev` outside the VM, so nothing in the VM holds a token. Because the repository is public, the identity is given only to pull requests opened by maintainers and to runs after merging. On anyone else's pull request these two checks show as "Could not be executed", and the Actions they mirror still run.
 
@@ -387,7 +392,17 @@ The result, `cgr.dev/<your-org>/custom-python`, is built and signed by Chainguar
 
 The mirror never creates a package. A package created by this public repository's workflow would come out public, and a public package can't be made private again (see [the registry](#the-registry-private-ghcrio-packages)). So each destination package is created once from your machine, by pushing a tiny placeholder image. A package first pushed from the command line is private and isn't linked to any repository ([Working with the Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#pushing-container-images)). The placeholder is an empty OCI image with no labels, so nothing links it to a repository. Then grant this repository write access, and the mirror only updates what exists.
 
-You need [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane) and `gh`, signed in as the package owner (`cartyc`). The commands below are for every package in today's `cgr-sync.yaml`. For a new catalog entry, use just that name.
+You need [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane) and `gh`, signed in as the package owner (`cartyc`). The steps loop over a `names` array; set it first, in the same shell (the array form works in both bash and zsh). For a new catalog entry, list just the new names. Every package in today's `cgr-sync.yaml` is:
+
+```bash
+names=(python jdk jre custom-python custom-jdk nginx node
+  argocd redis
+  cert-manager-controller cert-manager-webhook cert-manager-cainjector cert-manager-acmesolver cert-manager-startupapicheck
+  kyverno kyvernopre kyverno-background-controller kyverno-cleanup-controller kyverno-reports-controller kyverno-cli
+  kube-state-metrics go static)
+```
+
+`static` is the one package whose image comes from outside the org (Chainguard's public catalog, `cgr.dev/chainguard`). Its package is pre-created and kept private exactly like the others.
 
 1. **Let your `gh` login write packages for now**, and hand its token to `crane`. GitHub asks you to approve the extra `write:packages` scope in the browser:
    ```bash
@@ -397,15 +412,15 @@ You need [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/
 2. **Push the placeholder** to each package. This creates the packages as private:
    ```bash
    tmp=$(mktemp -d) && tar -cf "$tmp/empty.tar" -T /dev/null
-   for name in python jdk jre custom-python custom-jdk nginx node; do
+   for name in "${names[@]}"; do
      crane append --oci-empty-base -f "$tmp/empty.tar" -t "ghcr.io/cartyc/golden/${name}:golden-bootstrap"
    done
    ```
    Pushing to a name you deleted within the last 30 days uses up that name, so the deleted package can no longer be restored. That's intended here: the packages deleted after the first ghcr run were public.
-3. **Check every package is private.** All seven lines must say `private`:
+3. **Check every package is private.** Every line must say `private`:
    ```bash
-   for name in python jdk jre custom-python custom-jdk nginx node; do
-     printf '%-14s ' "$name"; gh api "/users/cartyc/packages/container/golden%2F${name}" --jq .visibility
+   for name in "${names[@]}"; do
+     printf '%-30s ' "$name"; gh api "/users/cartyc/packages/container/golden%2F${name}" --jq .visibility
    done
    ```
    If any says `public`, stop: don't enable the mirror, and don't push to that package again.
@@ -423,14 +438,14 @@ You need [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/
    Watch it with `gh run watch --repo cartyc/golden-image`. When it passes, rerun step 3; the packages must still be private.
 7. **Delete the placeholders**, once a mirror run has passed. First list exactly what will go (one version per package, tagged `golden-bootstrap`):
    ```bash
-   for name in python jdk jre custom-python custom-jdk nginx node; do
+   for name in "${names[@]}"; do
      gh api "/user/packages/container/golden%2F${name}/versions" --paginate \
        --jq ".[] | select(.metadata.container.tags | index(\"golden-bootstrap\")) | \"${name} \(.id) \(.name) \(.metadata.container.tags)\""
    done
    ```
    Then delete those versions. This deletes only the version tagged `golden-bootstrap` in each package:
    ```bash
-   for name in python jdk jre custom-python custom-jdk nginx node; do
+   for name in "${names[@]}"; do
      for id in $(gh api "/user/packages/container/golden%2F${name}/versions" --paginate \
          --jq '.[] | select(.metadata.container.tags | index("golden-bootstrap")) | .id'); do
        gh api -X DELETE "/user/packages/container/golden%2F${name}/versions/${id}" && echo "deleted ${name} version ${id}"
@@ -453,6 +468,26 @@ If the guard fails later, its message names the package and the reason: missing 
 3. **Before merging**, pre-create `ghcr.io/<owner>/golden/redis` as a private package and grant this repository Write: [Pre-create the golden packages](#pre-create-the-golden-packages-private), steps 1–5, with just the new name. Otherwise the guard stops the mirror run that the merge triggers. This applies to entries the image-request intake adds too.
 4. Merge, then mirror it now instead of waiting: `gh workflow run passthrough-mirror.yaml` (or **Actions → Passthrough mirror → Run workflow**).
 5. The `verify` job gates it (grype CVE scan + cosign SBOM attestation). A signing-identity mismatch means the tag is signed by a different identity than the policy allows — see *Verify failures* below.
+
+### Mirror an image the org isn't entitled to (public catalog)
+
+Every entry mirrors from `cgr.dev/<your-org>` and is verified against the org's `issuer.enforce.dev` identity, except where an image isn't entitled to the org but is in Chainguard's free public catalog. `static` is the only such entry today: app-delivery's `hello` service builds on it. It gets its own `source` and a whole `verify` block, because public-catalog images are signed by Chainguard's GitHub release workflow, not by an identity under the org UIDP:
+
+```yaml
+- name: static
+  source: cgr.dev/chainguard
+  tags:
+    list: ["latest"]
+  verify:
+    enabled: true
+    certificate_oidc_issuer: https://token.actions.githubusercontent.com
+    certificate_identity_regexp: ^https://github\.com/chainguard-images/images/
+```
+
+- The public catalog serves only `latest`-style tags, so the catalog gate warns that the entry pins only `latest`. That warning is expected here.
+- The `verify` job checks the SBOM attestation with the same block (`goldenctl catalog golden-images` emits each entry's own identity).
+- Pre-create its package like any other (above); it stays private. The image itself is public at the source, so keeping the mirror private doesn't hide anything. It keeps the golden registry uniformly private, so consumers use one pull secret.
+- Prefer an org-entitled image when there is one: org images are what the cluster's Kyverno signature policy verifies. A public-catalog image should be a build-time base only.
 
 ### Customize **all** custom images
 
@@ -497,6 +532,24 @@ Edit `custom-assembly/overlays/golden-base.yaml`, e.g. swap `glibc-locale-fr` / 
 ### Upgrade `cgr-sync`
 
 Bump `CGR_SYNC_IMAGE: ghcr.io/cartyc/image-syncer:vX.Y.Z` in `passthrough-mirror.yaml`, open a PR, merge.
+
+### CVE gate waivers (not VEX)
+
+When an image the catalog needs has a Critical or High CVE that Chainguard hasn't fixed yet (grype shows no fixed version), the PR's `cve-scan` fails. If the image has to land anyway, add a waiver to `policy/cve-exceptions.yaml`:
+
+```yaml
+exceptions:
+  - cve: CVE-2026-84243
+    images: [argocd, redis, go]   # catalog names; only the images that hit it
+    reason: "glibc-2.44 High with no fixed version published (2026-11-10)"
+    expires: "2026-12-10"         # YYYY-MM-DD, at most 30 days ahead
+```
+
+- `goldenctl gate cve` stops counting that CVE ID for those images until `expires`, lists every waived finding under **Waived** in the step summary and the CVE-details comment, and logs each one.
+- On `expires` (UTC) the waiver stops applying, the CVE counts again, and the gate warns that it expired. A waiver more than 30 days out, or one missing `cve`, `images`, `reason` or `expires`, fails the gate.
+- A PR that changes the file re-runs `cve-scan` on every image a waiver names, before or after the change.
+- **A waiver is a gate exception, not a VEX statement.** It doesn't claim the image is unaffected, nothing is published to scanners or consumers, and grype still reports the CVE everywhere else (including this repository's post-mirror `verify` job, which fails on `critical` only). Don't write VEX for these.
+- Remove the entry once the patched image is in the catalog. To renew, open a PR that re-checks the fix state and moves `expires` (still at most 30 days).
 
 ### Verify failures
 

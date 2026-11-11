@@ -15,7 +15,7 @@
 name: Catalog gate
 on:
   pull_request:
-    paths: ["cgr-sync.yaml", "custom-assembly/**"]
+    paths: ["cgr-sync.yaml", "custom-assembly/**", "policy/cve-exceptions.yaml"]
   workflow_dispatch: {}
 permissions: {}
 jobs:
