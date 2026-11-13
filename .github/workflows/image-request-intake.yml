@@ -8,12 +8,13 @@
 # scaffolds a custom-assembly/overlays/<repo>.yaml overlay stub and binds it in
 # custom-assembly/bindings.yaml), opens a PR that
 # `Closes` the issue, and comments the PR link back on the issue. The normal
-# Catalog gate + CODEOWNERS review still apply to that PR. For the Pass-through
-# lane the bot also ARMS auto-merge (--auto --squash): the PR merges itself once
-# Catalog gate is green AND a reviewer approves — a human stays in the loop, only
-# the manual "click merge" goes away. Custom Assembly PRs stay fully manual.
+# Chainguard Checks, Catalog gate and CODEOWNERS review still apply to that PR.
+# For the Pass-through lane the bot also ARMS auto-merge (--auto --squash): the
+# PR merges itself once the required "Chainguard Checks (presubmit)" check is
+# green AND a reviewer approves — a human stays in the loop, only the manual
+# "click merge" goes away. Custom Assembly PRs stay fully manual.
 # (Auto-merge needs the repo's "Allow auto-merge" setting + branch protection
-# with a required review and the required Catalog gate check; without them,
+# with a required review and the required Chainguard Checks check; without them,
 # arming is a no-op and the PR just waits for a manual merge.)
 #
 # NOTE: a PR opened with the default GITHUB_TOKEN does NOT trigger other
@@ -133,7 +134,8 @@ jobs:
           - [ ] Tag(s) pinned (not only \`latest\`)
           - [ ] Custom Assembly overlay (if any) completed + packages on the allowlist
           - [ ] FIPS requirement satisfied
-          - [ ] **Catalog gate** green (conftest + policies check + CVE scan)
+          - [ ] **Chainguard Checks (presubmit)** green (lint + conftest + goldenctl)
+          - [ ] **Catalog gate** green (policies check + CVE scan)
 
           > Opened by the intake bot. If Catalog gate did not run, configure an intake GitHub App or \`INTAKE_PAT\` (see the workflow header).
           EOF
@@ -144,18 +146,19 @@ jobs:
           echo "PR: $pr_url"
 
           # Pass-through lane: arm auto-merge so the PR merges ITSELF once every
-          # branch-protection condition is met — i.e. Catalog gate is green AND a
+          # branch-protection condition is met — i.e. the required "Chainguard
+          # Checks (presubmit)" check is green AND a
           # human reviewer (CODEOWNERS) approves. This removes the manual "click
           # merge" chore but keeps a human in the loop; GitHub won't merge until
           # the required review lands. Custom Assembly PRs touch overlay files and
           # stay fully manual. Needs repo "Allow auto-merge" + branch protection
-          # with required review + required Catalog gate check; if either is
+          # with required review + required Chainguard Checks check; if either is
           # missing, arming is a no-op warning and the PR just waits for a manual
           # merge (unchanged behaviour).
           automerge_note=""
           if [ "$is_custom" != "true" ]; then
             if gh pr merge --auto --squash "$pr_url"; then
-              automerge_note=" Auto-merge is armed — it will merge once Catalog gate is green and a reviewer approves."
+              automerge_note=" Auto-merge is armed — it will merge once Chainguard Checks (presubmit) is green and a reviewer approves."
             else
               echo "::warning::could not arm auto-merge (repo auto-merge disabled or no branch protection?) — PR will wait for a manual merge"
             fi
