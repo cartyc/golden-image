@@ -7,7 +7,7 @@ Closes #<!-- linked image-request issue -->
 - [ ] Source is on `cgr.dev` and the tag is **pinned** (not only `latest`)
 - [ ] Any added Custom Assembly packages are justified and on the **allowlist**
 - [ ] FIPS requirement satisfied (`-fips` build exists if the request needs FIPS)
-- [ ] CI green: **Catalog gate** (conftest + `chainctl policies check`) and **Validate**
+- [ ] CI green: **Chainguard Checks (presubmit)** (lint, conftest, goldenctl, catalog-exists, cve-scan) and **Catalog gate** (`chainctl policies check` + CVE scan)
 - [ ] Signatures verified before mirroring (`verify.enabled: true`)
 
 > Merging enqueues promotion into the golden registry via the environment-gated

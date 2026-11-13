@@ -1,8 +1,8 @@
 # Repo-side request gate (conftest / OPA)
 
 `policy/conftest/catalog.rego` gates golden-image **change requests** in CI
-(`.github/workflows/catalog-gate.yml`): it checks that a catalog PR is
-well-formed and within policy before a platform reviewer approves it.
+(the Chainguard Checks `conftest` check, `.chainguard/ci/repo.yaml`): it checks
+that a catalog PR is well-formed and within policy before a platform reviewer approves it.
 
 | Check | Applies to |
 | --- | --- |

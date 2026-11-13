@@ -1,46 +1,33 @@
 name: validate
 
-# Lint the workflows and configs on every PR and push to main:
-#   - actionlint  : GitHub Actions syntax + expressions (+ shellcheck on run:)
-#   - yamllint    : YAML hygiene incl. duplicate keys
-#   - config check: cgr-sync.yaml / custom-assembly overlays parse, and the
-#     overlays + bindings are consistent (goldenctl overlay check, offline)
-#     (the goldenctl helpers are built + tested by the goldenctl workflow)
+# actionlint WITH shellcheck on every workflow run: block. The rest of the lint
+# (actionlint, yamllint, configs parse, goldenctl overlay check) runs in the
+# Chainguard Checks `lint` and `goldenctl` checks (.chainguard/ci/repo.yaml).
+# This job stays because the Checks VM has no shellcheck (there's no Wolfi
+# package), so actionlint there skips the run: scripts. The ubuntu-latest
+# runner image ships shellcheck, and actionlint uses it when it's on PATH.
 
 on:
   pull_request:
+    paths: [".github/**"]
   push:
     branches: [main]
+    paths: [".github/**"]
 
 permissions:
   contents: read
 
 jobs:
-  lint:
+  actionlint-shellcheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: shellcheck is on PATH
+        # Without it actionlint silently skips run: scripts, and this job adds nothing.
+        run: shellcheck --version
 
       - name: actionlint
         run: |
           bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint -color
-
-      - name: yamllint
-        run: |
-          pipx install yamllint
-          yamllint -d relaxed .github/ cgr-sync.yaml custom-assembly/
-
-      - name: Validate configs parse
-        run: |
-          python3 - <<'PY'
-          import glob, yaml
-          for f in sorted(glob.glob("custom-assembly/**/*.yaml", recursive=True)) + ["cgr-sync.yaml"]:
-              yaml.safe_load(open(f))
-              print("parsed", f)
-          PY
-
-      - uses: ./.github/actions/goldenctl
-
-      - name: Overlays and bindings are consistent
-        run: goldenctl overlay check
