@@ -275,6 +275,7 @@ then gated promote to prod) for the canonical two-tier release control.
 | &nbsp;&nbsp;`custom-assembly/bindings.yaml` | Which repos (or folder, or whole org) and which tags (`all`, `dev`, exact) get each overlay. | Add a binding to apply an overlay somewhere; remove one to detach it. |
 | `goldenctl/` | The **Go CLI** the CI calls for all catalog / intake / gate / policy / dashboard helpers (one binary, unit-tested). | Subcommands: `catalog refs\|changed\|add\|verify\|golden-images\|guard`, `intake parse\|overlay`, `gate policies\|cve`, `policy reconcile\|bindings\|libraries`, `overlay check\|reconcile\|render\|bind`, `dashboard`. Built per-job with `setup-go`; see `goldenctl/README.md`. |
 | `.github/workflows/` | The CI lanes (see the next table). | — |
+| `renovate.json` | Renovate config for dependency updates. | The Renovate GitHub App opens PRs that bump the pinned GitHub Actions (grouped into one PR), the `goldenctl` Go modules, and the `cgr-sync` image (`CGR_SYNC_IMAGE`). |
 | `LICENSE` | Apache-2.0. | — |
 
 ### Workflows (`.github/workflows/`)
@@ -285,7 +286,6 @@ then gated promote to prod) for the canonical two-tier release control.
 | `custom-assembly.yaml` | PR/push on `custom-assembly/**`, daily, manual | `goldenctl overlay reconcile`: plan on PRs; on merge (after `registry-admin` approval) creates/updates overlays and attaches, re-scopes or detaches bindings, so Chainguard builds and signs the custom images. Repos still on standard Custom Assembly get the merged layers via `chainctl images repos build apply`. Daily drift check. |
 | `validate.yml` | PR + push to `main` touching `.github/**` | `actionlint` with `shellcheck` on every `run:` block. The rest of the lint is the Checks `lint` check; this job stays because the Checks VM has no `shellcheck`. |
 | `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. Same check as the Checks `catalog-exists`; kept for PRs that don't get the `cgr-pull` identity. |
-| `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
 | `image-request-intake.yml` | issue labeled `approved` | Turns an approved **image-request** issue into a ready-to-review PR: parses the form, appends the `cgr-sync.yaml` entry (+ for the Custom Assembly lane, scaffolds `custom-assembly/overlays/<repo>.yaml` and binds it with `golden-base`), opens the PR, and comments the link on the issue. |
 | `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**`/`policy/cve-exceptions.yaml` | Gates a change request — **scoped to the refs the PR changed**: `chainctl policies check` (ENFORCE denials fail, DRY_RUN warn) + `grype` CVE-count scan (the same gate as the Checks `cve-scan`, kept for PRs that don't get the `cgr-pull` identity). `conftest` is the Checks `conftest` check. Posts a sticky **gate-summary** comment and, on CVE failure, an itemized **CVE-details** comment. |
 | `policies.yml` | PR + merge on `registry-policies/**` or `library-policies/**` | Unified plan → gate → apply for **both** container pull policies (`registry-policies/`, incl. `bindings.yaml`) and Libraries policies (`library-policies/`): preview on PR, reconcile + prune on merge, gated by the `registry-admin` environment. |
@@ -536,7 +536,7 @@ Edit `custom-assembly/overlays/golden-base.yaml`, e.g. swap `glibc-locale-fr` / 
 
 ### Upgrade `cgr-sync`
 
-Bump `CGR_SYNC_IMAGE: ghcr.io/cartyc/image-syncer:vX.Y.Z` in `passthrough-mirror.yaml`, open a PR, merge.
+Renovate opens a PR when a new `ghcr.io/cartyc/image-syncer` release ships. To do it by hand, bump `CGR_SYNC_IMAGE: ghcr.io/cartyc/image-syncer:vX.Y.Z` in `passthrough-mirror.yaml`, open a PR, merge.
 
 ### CVE gate waivers (not VEX)
 
