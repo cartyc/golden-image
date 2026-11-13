@@ -1,17 +1,20 @@
-# Gate on catalog change requests (PRs touching the pass-through catalog or the
-# Custom Assembly overlays). Three independent checks, all required by branch
-# protection:
-#   1. conftest — the catalog entry is well-formed and within policy
-#      (allowed source, pinned tags, package allowlist). Runs offline.
-#   2. chainctl policies check — the requested image would pass the REGISTRY's
+# Gate on catalog change requests (PRs touching the pass-through catalog, the
+# Custom Assembly overlays or the CVE gate waivers). Two independent checks:
+#   1. chainctl policies check — the requested image would pass the REGISTRY's
 #      active pull policies (fips-required / min-version / max-age / no-eol).
 #      An ENFORCE denial fails the PR (a non-compliant image never gets
 #      promoted); a DRY_RUN denial is a warning, so observe-mode policies inform
-#      the reviewer without blocking.
-#   3. cve-scan — grype scans each requested image and fails the PR if its
+#      the reviewer without blocking. Chainguard Checks has no equivalent: it
+#      calls the Chainguard API.
+#   2. cve-scan — grype scans each requested image and fails the PR if its
 #      Critical/High CVE counts exceed the thresholds. Pull policies can't see
 #      CVEs (their input is package lifecycle metadata only), so this scanner
-#      step is where the actual CVE-COUNT gate lives.
+#      step is where the actual CVE-COUNT gate lives. The Chainguard Checks
+#      `cve-scan` runs the same gate, but only on PRs whose author holds the
+#      cgr-pull identity (.chainguard/ci/identities.yaml); this job covers the
+#      rest (e.g. intake-bot PRs) and posts the CVE-details comment.
+# conftest moved to the Chainguard Checks `conftest` check (.chainguard/ci/repo.yaml),
+# which needs no identity and runs on every PR.
 name: Catalog gate
 on:
   pull_request:
@@ -19,22 +22,6 @@ on:
   workflow_dispatch: {}
 permissions: {}
 jobs:
-  conftest:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Install conftest
-        run: |
-          ver=0.56.0
-          curl -sSfL "https://github.com/open-policy-agent/conftest/releases/download/v${ver}/conftest_${ver}_Linux_x86_64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin conftest
-      - name: Policy-check the catalog + overlays
-        run: |
-          conftest test --policy policy/conftest --all-namespaces cgr-sync.yaml
-          conftest test --policy policy/conftest --all-namespaces custom-assembly/overlays/*.yaml
-
   policies-check:
     runs-on: ubuntu-latest
     permissions:
@@ -119,10 +106,10 @@ jobs:
           fi
 
   # Consolidated, human-friendly gate feedback as a sticky PR comment — so a
-  # requester sees pass/fail for all three checks in one place without digging
+  # requester sees pass/fail for both checks in one place without digging
   # through job logs. Runs after the gates regardless of their outcome.
   summary:
-    needs: [conftest, policies-check, cve-scan]
+    needs: [policies-check, cve-scan]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -133,7 +120,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
-          C: ${{ needs.conftest.result }}
           P: ${{ needs.policies-check.result }}
           V: ${{ needs.cve-scan.result }}
         run: |
@@ -144,7 +130,7 @@ jobs:
             *) echo "⚠️ $1";; esac; }
           marker="<!-- catalog-gate-summary -->"
           overall="✅ ready for review"
-          if [ "$C" = "failure" ] || [ "$P" = "failure" ] || [ "$V" = "failure" ]; then
+          if [ "$P" = "failure" ] || [ "$V" = "failure" ]; then
             overall="❌ changes needed — see the failing check(s)"
           fi
           body=$(cat <<EOF
@@ -153,9 +139,10 @@ jobs:
 
           | Check | Result | What it verifies |
           |---|---|---|
-          | conftest | $(icon "$C") | well-formed entry · source on cgr.dev · pinned tag · package allowlist · signature |
           | policies check | $(icon "$P") | ENFORCE pull policies pass (fips / min-version / max-age / no-eol); DRY_RUN denials are warnings |
           | cve-scan | $(icon "$V") | grype Critical/High counts within threshold |
+
+          conftest (well-formed entry · source on cgr.dev · pinned tag · package allowlist · signature) reports under **Chainguard Checks (presubmit)**.
 
           _Auto-updated by Catalog gate on each push._
           EOF

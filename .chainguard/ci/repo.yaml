@@ -1,14 +1,18 @@
 version: 1
 # Chainguard Checks: the pull-request checks, in hardened microVMs with no
-# network unless a check lists hosts, and no secrets. They run beside the
-# GitHub Actions they mirror until the results match; then those Actions can go.
-#   lint, conftest, goldenctl   offline; validate.yml, goldenctl.yml and the
-#                               conftest job of catalog-gate.yml
+# network unless a check lists hosts, and no secrets. "Chainguard Checks
+# (presubmit)" is the required check on main.
+#   lint, conftest, goldenctl   offline; these replaced validate.yml's yamllint,
+#                               parse and overlay-check steps, goldenctl.yml and
+#                               the conftest job of catalog-gate.yml
 #   catalog-exists, cve-scan    on cgr.dev through the cgr-pull workload identity
-#                               (.chainguard/ci/identities.yaml); validate-catalog.yml
-#                               and the cve-scan job of catalog-gate.yml
-# Still on Actions: the policies-check job (it calls the Chainguard API) and the
-# sticky PR comments, because checks get no GitHub token.
+#                               (.chainguard/ci/identities.yaml), which only
+#                               cartyc's PRs and post-merge runs get, so
+#                               validate-catalog.yml and the cve-scan job of
+#                               catalog-gate.yml still run, to cover other PRs
+# Still on Actions: actionlint with shellcheck (validate.yml; the VM has no
+# shellcheck package), the policies-check job (it calls the Chainguard API) and
+# the sticky PR comments, because checks get no GitHub token.
 #   chainctl checks validate .                  check this file offline
 #   chainctl checks run --check lint --watch    run a pushed commit, advisory
 environment:

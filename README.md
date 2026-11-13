@@ -134,7 +134,7 @@ flowchart TD
   issue(["Requester opens<br/>image-request issue"])
   review{"Platform Eng<br/>reviews"}
   intake["<b>Image request intake</b><br/>parse form, append cgr-sync.yaml<br/>+ scaffold Custom Assembly overlay,<br/>open PR (Closes #issue), comment link"]
-  gate{"<b>Catalog gate</b> (scoped to changed refs)<br/>conftest, policies-check, cve-scan"}
+  gate{"<b>Chainguard Checks</b> (conftest, lint, ...)<br/>+ <b>Catalog gate</b> (scoped to changed refs)<br/>policies-check, cve-scan"}
   feedback[/"sticky PR comments:<br/>gate summary + CVE details"/]
   remediate["Requester remediates<br/>(e.g. bump the version)"]
   codeowners{"CODEOWNERS<br/>approve"}
@@ -175,11 +175,15 @@ appends a valid entry the same way.
 - **CODEOWNERS** (`.github/CODEOWNERS`) — Platform Engineering must approve any
   change to the catalog, overlays, or policies. Enforce with branch protection
   ("Require review from Code Owners").
-- **Catalog gate** (`.github/workflows/catalog-gate.yml`) — three required checks:
-  - `conftest` (`policy/conftest/`) — the request is well-formed and within
-    policy: sources on `cgr.dev`, packages on the approved allowlist, HTTPS
-    runtime repos, signatures verified. Demo a denial:
-    `conftest test --policy policy/conftest policy/conftest/examples/disallowed-package.yaml`.
+- **Required check: Chainguard Checks (presubmit)** — the only status check
+  the `main` ruleset requires. It covers lint, `goldenctl` tests and `conftest`
+  (`policy/conftest/`): the request is well-formed and within policy, meaning
+  sources on `cgr.dev`, packages on the approved allowlist, HTTPS runtime
+  repos and signatures verified. Demo a denial:
+  `conftest test --policy policy/conftest policy/conftest/examples/disallowed-package.yaml`.
+  It also runs `catalog-exists` and `cve-scan` on PRs that get the `cgr-pull`
+  identity; see [Chainguard Checks](#chainguard-checks-and-workspaces-chainguard).
+- **Catalog gate** (`.github/workflows/catalog-gate.yml`), on every catalog PR whoever opened it:
   - `chainctl policies check` (`goldenctl gate policies`) — the image passes
     the **registry's** active pull policies. An **ENFORCE** denial fails the PR
     (a non-compliant image is never promoted); a **DRY_RUN** denial is a
@@ -190,7 +194,8 @@ appends a valid entry the same way.
     (`MAX_CRITICAL`/`MAX_HIGH`, default `0`/`0`; `MAX_MEDIUM` unlimited). Pull
     policies can't see CVEs — their input is package lifecycle metadata only —
     so this scanner step is the actual **CVE-count** gate. Tune the thresholds
-    in the workflow `env:`.
+    in the workflow `env:` and in the `cve-scan` `vars:` of
+    `.chainguard/ci/repo.yaml`; keep the two the same.
     A CVE with no fix yet can be waived for named images, for at most 30 days,
     in `policy/cve-exceptions.yaml`: see
     [CVE gate waivers](#cve-gate-waivers-not-vex).
@@ -200,11 +205,11 @@ appends a valid entry the same way.
     **passthrough-mirror** verify job and a manual **Catalog gate** dispatch
     (which scan everything).
 - **Gate feedback (sticky PR comments)** — the Catalog gate posts a **summary**
-  comment (pass/fail for all three checks) and, when `cve-scan` fails, an
+  comment (pass/fail for both of its checks) and, when `cve-scan` fails, an
   itemized **CVE-details** comment (offending CVE · package · installed ·
   fixed-in) so the requester sees exactly what to fix without reading job logs.
   Both auto-update on each push.
-- **Validate** / **Validate catalog** — lint + the source-exists check.
+- **Validate** / **Validate catalog** — actionlint with shellcheck + the source-exists check.
 
 ### 3. Registry pull policies (enforced by Chainguard, at pull time)
 Independently of CI, the org registry enforces **pull-time** policy — see
@@ -278,28 +283,28 @@ then gated promote to prod) for the canonical two-tier release control.
 | --- | --- | --- |
 | `passthrough-mirror.yaml` | schedule (6h), push to `main` changing `cgr-sync.yaml`, manual | Checks every destination package already exists and is private (`goldenctl catalog guard`), mirrors the `cgr-sync.yaml` catalog into the golden registry (ghcr.io) with `cgr-sync` (verify-before-mirror, signatures/attestations preserved), then independently verifies each catalog ref (grype CVE gate + cosign SBOM attestation; a missing ref fails). |
 | `custom-assembly.yaml` | PR/push on `custom-assembly/**`, daily, manual | `goldenctl overlay reconcile`: plan on PRs; on merge (after `registry-admin` approval) creates/updates overlays and attaches, re-scopes or detaches bindings, so Chainguard builds and signs the custom images. Repos still on standard Custom Assembly get the merged layers via `chainctl images repos build apply`. Daily drift check. |
-| `validate.yml` | every PR + push to `main` | Lints the workflows and configs (`actionlint`, `yamllint`) and confirms `cgr-sync.yaml` / overlays parse. |
-| `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. |
+| `validate.yml` | PR + push to `main` touching `.github/**` | `actionlint` with `shellcheck` on every `run:` block. The rest of the lint is the Checks `lint` check; this job stays because the Checks VM has no `shellcheck`. |
+| `validate-catalog.yml` | PR touching `cgr-sync.yaml` | Pre-merge check that every source `image:tag` in the catalog actually exists at `cgr.dev`. Same check as the Checks `catalog-exists`; kept for PRs that don't get the `cgr-pull` identity. |
 | `digestabot.yaml` | schedule (daily) + manual | Opens a PR bumping pinned image/action digests in the repo to their latest. |
 | `image-request-intake.yml` | issue labeled `approved` | Turns an approved **image-request** issue into a ready-to-review PR: parses the form, appends the `cgr-sync.yaml` entry (+ for the Custom Assembly lane, scaffolds `custom-assembly/overlays/<repo>.yaml` and binds it with `golden-base`), opens the PR, and comments the link on the issue. |
-| `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**`/`policy/cve-exceptions.yaml` | Gates a change request — **scoped to the refs the PR changed**: `conftest` + `chainctl policies check` (ENFORCE denials fail, DRY_RUN warn) + `grype` CVE-count scan. Posts a sticky **gate-summary** comment and, on CVE failure, an itemized **CVE-details** comment. |
+| `catalog-gate.yml` | PR touching `cgr-sync.yaml`/`custom-assembly/**`/`policy/cve-exceptions.yaml` | Gates a change request — **scoped to the refs the PR changed**: `chainctl policies check` (ENFORCE denials fail, DRY_RUN warn) + `grype` CVE-count scan (the same gate as the Checks `cve-scan`, kept for PRs that don't get the `cgr-pull` identity). `conftest` is the Checks `conftest` check. Posts a sticky **gate-summary** comment and, on CVE failure, an itemized **CVE-details** comment. |
 | `policies.yml` | PR + merge on `registry-policies/**` or `library-policies/**` | Unified plan → gate → apply for **both** container pull policies (`registry-policies/`, incl. `bindings.yaml`) and Libraries policies (`library-policies/`): preview on PR, reconcile + prune on merge, gated by the `registry-admin` environment. |
 
 ### Chainguard Checks and Workspaces (`.chainguard/`)
 
-The pull-request checks also run on [Chainguard Checks](https://www.chainguard.dev/docs/chainguard/checks/configuration), in hardened microVMs with no secrets and no network unless a check lists hosts. They're defined in `.chainguard/ci/repo.yaml`:
+The pull-request checks run on [Chainguard Checks](https://www.chainguard.dev/docs/chainguard/checks/configuration), in hardened microVMs with no secrets and no network unless a check lists hosts. They're defined in `.chainguard/ci/repo.yaml`:
 
-| Check | Runs when | Mirrors |
+| Check | Runs when | Replaced / duplicates |
 | --- | --- | --- |
-| `lint` | every PR | `validate.yml`: actionlint, yamllint, configs parse |
-| `conftest` | `cgr-sync.yaml`, `custom-assembly/**`, `policy/**` or `.chainguard/**` change | the `conftest` job of `catalog-gate.yml` |
-| `goldenctl` | `goldenctl/**`, `custom-assembly/**` or `.chainguard/**` change; egress to the Go module proxy (and its storage.googleapis.com downloads) only | `goldenctl.yml`, plus `goldenctl overlay check` |
-| `catalog-exists` | `cgr-sync.yaml` or `.chainguard/**` change; pulls from `cgr.dev` with the `cgr-pull` workload identity | `validate-catalog.yml`: every source `image:tag` exists on `cgr.dev` |
-| `cve-scan` | `cgr-sync.yaml`, `custom-assembly/**`, `policy/cve-exceptions.yaml` or `.chainguard/**` change; pulls from `cgr.dev` with the `cgr-pull` workload identity | the `cve-scan` job of `catalog-gate.yml`: no Critical or High CVEs in the images the change adds, beyond unexpired waivers |
+| `lint` | every PR | replaced `validate.yml`'s yamllint and parse steps; its actionlint runs without shellcheck, so `validate.yml` keeps an actionlint + shellcheck job |
+| `conftest` | `cgr-sync.yaml`, `custom-assembly/**`, `policy/**` or `.chainguard/**` change | replaced the `conftest` job of `catalog-gate.yml` |
+| `goldenctl` | `goldenctl/**`, `custom-assembly/**` or `.chainguard/**` change; egress to the Go module proxy (and its storage.googleapis.com downloads) only | replaced `goldenctl.yml` (go vet, test, build) and `validate.yml`'s `goldenctl overlay check` |
+| `catalog-exists` | `cgr-sync.yaml` or `.chainguard/**` change; pulls from `cgr.dev` with the `cgr-pull` workload identity | duplicates `validate-catalog.yml`: every source `image:tag` exists on `cgr.dev` |
+| `cve-scan` | `cgr-sync.yaml`, `custom-assembly/**`, `policy/cve-exceptions.yaml` or `.chainguard/**` change; pulls from `cgr.dev` with the `cgr-pull` workload identity | duplicates the `cve-scan` job of `catalog-gate.yml`: no Critical or High CVEs in the images the change adds, beyond unexpired waivers |
 
-`catalog-exists` and `cve-scan` use the `cgr-pull` identity in `.chainguard/ci/identities.yaml`. Chainguard Checks adds its `registry.pull` credential to the check's requests to `cgr.dev` outside the VM, so nothing in the VM holds a token. Because the repository is public, the identity is given only to pull requests opened by maintainers and to runs after merging. On anyone else's pull request these two checks show as "Could not be executed", and the Actions they mirror still run.
+`catalog-exists` and `cve-scan` use the `cgr-pull` identity in `.chainguard/ci/identities.yaml`. Chainguard Checks adds its `registry.pull` credential to the check's requests to `cgr.dev` outside the VM, so nothing in the VM holds a token. Because the repository is public, the identity is given only to pull requests opened by maintainers and to runs after merging. On anyone else's pull request these two checks show as "Could not be executed", so the Actions they duplicate (`validate-catalog.yml` and the `cve-scan` job of `catalog-gate.yml`) stay. They run on every catalog PR, including the intake bot's when it opens PRs with a GitHub App token or `INTAKE_PAT`.
 
-Results appear on the PR as **Chainguard Checks (presubmit)**. They run beside the Actions they mirror; once they agree, require the summary check in branch protection and retire those Actions. A few things stay on Actions: the `policies-check` job (it calls the Chainguard API), mirroring, intake, and the sticky PR comments. Checks get no GitHub token.
+Results appear on the PR as **Chainguard Checks (presubmit)**, the check the `main` ruleset requires. The Actions that only duplicated identity-free checks are gone. A few things stay on Actions: actionlint with shellcheck (`validate.yml`), `catalog-exists` and `cve-scan` for other authors' PRs, the `policies-check` job (it calls the Chainguard API), mirroring, intake, and the sticky PR comments. Checks get no GitHub token.
 
 `chainctl checks validate .` checks the file offline; `chainctl checks run --check lint --watch` runs a pushed commit as an advisory run.
 
@@ -353,7 +358,7 @@ Layers combine the way Chainguard combines them: organization, then folder, then
 - **Merge to `main`:** apply, after `registry-admin` approval (as for policies). It creates or updates an overlay only when its content changed, because every overlay update rebuilds every tag it's bound to. Bindings removed from `bindings.yaml` are detached, and overlay files deleted in the push are detached and deleted.
 - **Daily:** a drift check that fails if the live state no longer matches the files.
 
-`goldenctl overlay check` (offline, in `validate.yml`) catches unsupported fields, unknown overlays, double bindings and unbound overlays before review. `goldenctl overlay render --repo <repo>` prints what a repo gets from its all-tags layers.
+`goldenctl overlay check` (offline, in the Chainguard Checks `goldenctl` check) catches unsupported fields, unknown overlays, double bindings and unbound overlays before review. `goldenctl overlay render --repo <repo>` prints what a repo gets from its all-tags layers.
 
 **Repos on standard Custom Assembly.** A repo can use standard Custom Assembly or overlays, not both, and `custom-python` and `custom-jdk` started on standard. Until the Chainguard account team moves a repo to overlays, the reconciler merges that repo's all-tags layers into one config and applies it with `chainctl images repos build apply`, so the same files drive it. After the move it switches to bindings on its own. The merged layers equal the configs those two repos are built with today, so adopting this layout rebuilds nothing.
 
@@ -464,7 +469,7 @@ If the guard fails later, its message names the package and the reason: missing 
      tags:
        list: ["latest", "7"]
    ```
-2. Open a PR. **`validate-catalog`** confirms every `image:tag` exists at `cgr.dev` before merge; **`validate`** lints the config.
+2. Open a PR. **`validate-catalog`** (and, on maintainers' PRs, the Checks `catalog-exists`) confirms every `image:tag` exists at `cgr.dev` before merge; the Checks `lint` and `conftest` checks lint and policy-check the config.
 3. **Before merging**, pre-create `ghcr.io/<owner>/golden/redis` as a private package and grant this repository Write: [Pre-create the golden packages](#pre-create-the-golden-packages-private), steps 1–5, with just the new name. Otherwise the guard stops the mirror run that the merge triggers. This applies to entries the image-request intake adds too.
 4. Merge, then mirror it now instead of waiting: `gh workflow run passthrough-mirror.yaml` (or **Actions → Passthrough mirror → Run workflow**).
 5. The `verify` job gates it (grype CVE scan + cosign SBOM attestation). A signing-identity mismatch means the tag is signed by a different identity than the policy allows — see *Verify failures* below.
