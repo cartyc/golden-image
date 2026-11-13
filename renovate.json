@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "Group GitHub Action bumps into a single PR",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Keep the pinned cgr-sync (image-syncer) release current",
+      "managerFilePatterns": ["/^\\.github/workflows/passthrough-mirror\\.yaml$/"],
+      "matchStrings": [
+        "CGR_SYNC_IMAGE:\\s*(?<depName>ghcr\\.io/cartyc/image-syncer):(?<currentValue>v[0-9][0-9.]*)"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ]
+}
